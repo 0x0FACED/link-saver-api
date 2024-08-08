@@ -1,0 +1,5 @@
+package linksaver
+
+func main() {
+
+}
