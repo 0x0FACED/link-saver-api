@@ -7,16 +7,16 @@ import (
 )
 
 type Config struct {
-	Server   serverConfig
-	Database databaseConfig
+	Server   ServerConfig
+	Database DatabaseConfig
 }
 
-type serverConfig struct {
+type ServerConfig struct {
 	Host string
 	Port string
 }
 
-type databaseConfig struct {
+type DatabaseConfig struct {
 	Name     string
 	Host     string
 	Port     string
@@ -32,7 +32,7 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Database: databaseConfig{
+		Database: DatabaseConfig{
 			Username: os.Getenv("DB_USER"),
 			Password: os.Getenv("DB_PASS"),
 			Name:     os.Getenv("DB_NAME"),
@@ -40,7 +40,7 @@ func Load() (*Config, error) {
 			Port:     os.Getenv("DB_PORT"),
 			Driver:   os.Getenv("DB_DRIVER"),
 		},
-		Server: serverConfig{
+		Server: ServerConfig{
 			Host: os.Getenv("S_HOST"),
 			Port: os.Getenv("S_PORT"),
 		},
