@@ -7,18 +7,17 @@ import (
 )
 
 var (
-	ErrConnectDB = errors.New("err connect do")
+	ErrConnectDB = errors.New("err connect db")
 )
 
 type Database interface {
-	Connect(connStr string) error
+	Connect() error
 
 	LinkWorker
 }
 
 type LinkWorker interface {
 	SaveLink() error
-	GetLinkByDescription(desc string) (models.Link, error)
-	GetLinksByUsername(username string) ([]models.Link, error)
+	GetLinksByUsernameDesc(username string, desc string) ([]models.Link, error)
 	DeleteLink() error
 }
