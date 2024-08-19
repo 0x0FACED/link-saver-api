@@ -5,18 +5,25 @@ import (
 	"fmt"
 
 	"github.com/0x0FACED/link-saver-api/config"
-	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 	"github.com/0x0FACED/link-saver-api/internal/storage"
+	"github.com/0x0FACED/link-saver-api/migrations"
 	_ "github.com/lib/pq"
 )
 
 type Postgres struct {
 	db     *sql.DB
-	Config config.DatabaseConfig
+	config config.DatabaseConfig
+}
+
+func New(cfg config.DatabaseConfig) *Postgres {
+	return &Postgres{
+		config: cfg,
+	}
 }
 
 func (p *Postgres) Connect() error {
-	db, err := sql.Open("postgres", p.getConnStr())
+	connStr := p.getConnStr()
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return storage.ErrConnectDB
 	}
@@ -27,22 +34,15 @@ func (p *Postgres) Connect() error {
 
 	p.db = db
 
+	err = migrations.Up(connStr)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (p *Postgres) getConnStr() string {
+func (p Postgres) getConnStr() string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		p.Config.Username, p.Config.Password, p.Config.Host, p.Config.Port, p.Config.Name)
-}
-
-func (p *Postgres) SaveLink() error {
-	panic("not implemented") // TODO: Implement
-}
-
-func (p *Postgres) GetLinksByUsernameDesc(username string, desc string) ([]models.Link, error) {
-	panic("not implemented") // TODO: Implement
-}
-
-func (p *Postgres) DeleteLink() error {
-	panic("not implemented") // TODO: Implement
+		p.config.Username, p.config.Password, p.config.Host, p.config.Port, p.config.Name)
 }
