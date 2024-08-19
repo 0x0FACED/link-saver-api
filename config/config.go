@@ -9,9 +9,15 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
+	Redis    RedisConfig
 }
 
 type ServerConfig struct {
+	Host string
+	Port string
+}
+
+type RedisConfig struct {
 	Host string
 	Port string
 }
@@ -43,6 +49,10 @@ func Load() (*Config, error) {
 		Server: ServerConfig{
 			Host: os.Getenv("S_HOST"),
 			Port: os.Getenv("S_PORT"),
+		},
+		Redis: RedisConfig{
+			Host: os.Getenv("R_HOST"),
+			Port: os.Getenv("R_PORT"),
 		},
 	}, nil
 }
