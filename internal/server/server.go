@@ -1,11 +1,11 @@
 package server
 
 import (
-	"errors"
 	"net"
 
 	"github.com/0x0FACED/link-saver-api/config"
 	"github.com/0x0FACED/link-saver-api/internal/cached/redis"
+	"github.com/0x0FACED/link-saver-api/internal/logger"
 	"github.com/0x0FACED/link-saver-api/internal/service"
 	"github.com/0x0FACED/proto-files/link_service/gen"
 	"github.com/labstack/echo/v4"
@@ -19,9 +19,10 @@ type server struct {
 	echo    *echo.Echo
 }
 
-func New(cfg *config.Config) *server {
+func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 	r := redis.New(cfg.Redis)
-	s := service.New(cfg.Database, r)
+	s := service.New(cfg.Database, r, logger)
+	logger.Debug("Redis and service entities are created")
 	return &server{
 		config:  cfg.Server,
 		echo:    echo.New(),
@@ -30,22 +31,31 @@ func New(cfg *config.Config) *server {
 }
 
 func Start() error {
+	logger := logger.New()
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		return errors.New("Failed to listen: " + err.Error())
+		logger.Error("Failed to listen: " + err.Error())
+		return err
 	}
+	logger.Info("Start listen tcp on 50051")
 	s := grpc.NewServer()
 	cfg, err := config.Load()
 	if err != nil {
-		return errors.New("Failed to load config: " + err.Error())
-	}
-	srv := New(cfg)
-	srv.configureRouter()
-	gen.RegisterLinkServiceServer(s, srv.service)
-	if err := s.Serve(lis); err != nil {
-		return errors.New("Failed to serve: " + err.Error())
+		logger.Error("Failed to load config: " + err.Error())
+		return err
 	}
 
+	logger.Info("Config loaded")
+	srv := New(cfg, logger)
+	srv.configureRouter()
+	logger.Info("Server created and router configured")
+	gen.RegisterLinkServiceServer(s, srv.service)
+	logger.Info("Service registered and started, waiting for connections...")
+	if err := s.Serve(lis); err != nil {
+		logger.Error("Failed to serve: " + err.Error())
+		return err
+	}
+	logger.Info("Finished")
 	return nil
 }
 
