@@ -6,25 +6,24 @@ import (
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 	"github.com/0x0FACED/link-saver-api/internal/storage"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
+	"github.com/0x0FACED/proto-files/link_service/gen"
 )
 
 func (p *Postgres) SaveLink(ctx context.Context, l *models.Link) error {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Println("[DB] error starting tx in SaveLink():", err)
-		return err
+		return wrap.E("Cant begin tx with err", err)
 	}
 	defer tx.Rollback()
 
 	u, err := p.GetUserByUsername(ctx, tx, l.UserName)
 	var id int
 	if err == storage.ErrUserNotFound {
-		log.Println("NOT FOUND!!!!")
 		u = &models.User{
 			UserName: l.UserName,
 		}
 		id, err = p.SaveUser(ctx, tx, u)
-		log.Println("USER: ", u)
 		if err != nil {
 			return err
 		}
@@ -33,24 +32,22 @@ func (p *Postgres) SaveLink(ctx context.Context, l *models.Link) error {
 	q := `INSERT INTO links (original_url, user_id, description, content) VALUES ($1, $2, $3, $4)`
 	_, err = tx.ExecContext(ctx, q, l.OriginalURL, id, l.Description, l.Content)
 	if err != nil {
-		log.Println("[DB] error inserting link in SaveLink():", err)
 		return err
 	}
 
 	if err = tx.Commit(); err != nil {
-		log.Println("[DB] error committing tx in SaveLink():", err)
 		return err
 	}
 
 	return nil
 }
 
-func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]models.Link, error) {
+func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]*gen.Link, error) {
 	userID, err := p.GetUserIDByUsername(ctx, nil, username)
 	if err != nil {
 		return nil, storage.ErrUserNotFound
 	}
-	q := `SELECT id, original_url, description, content, date_added FROM links WHERE user_id = $1`
+	q := `SELECT id, original_url, description FROM links WHERE user_id = $1`
 	rows, err := p.db.QueryContext(ctx, q, userID)
 	if err != nil {
 		log.Println("[DB] error GetUserLinks():", err)
@@ -58,15 +55,14 @@ func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]models.
 	}
 	defer rows.Close()
 
-	var links []models.Link
+	var links []*gen.Link
 	for rows.Next() {
-		var l models.Link
-		if err := rows.Scan(&l.ID, &l.OriginalURL, &l.Description, &l.Content, &l.DateAdded); err != nil {
+		var l gen.Link
+		if err := rows.Scan(&l.LinkId, &l.OriginalUrl, &l.Description); err != nil {
 			log.Println("[DB] error scanning row in GetUserLinks():", err)
 			return nil, err
 		}
-		l.UserName = username
-		links = append(links, l)
+		links = append(links, &l)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -77,13 +73,13 @@ func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]models.
 	return links, nil
 }
 
-func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]models.Link, error) {
+func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]*gen.Link, error) {
 	userID, err := p.GetUserIDByUsername(ctx, nil, username)
 	if err != nil {
 		return nil, storage.ErrUserNotFound
 	}
 
-	q := `SELECT id, original_url, description, content, date_added FROM links WHERE user_id = $1 AND description LIKE $2`
+	q := `SELECT id, original_url, description FROM links WHERE user_id = $1 AND description LIKE $2`
 	rows, err := p.db.QueryContext(ctx, q, userID, "%"+desc+"%")
 	if err != nil {
 		log.Println("[DB] error GetLinksByUsernameDesc():", err)
@@ -91,15 +87,14 @@ func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, 
 	}
 	defer rows.Close()
 
-	var links []models.Link
+	var links []*gen.Link
 	for rows.Next() {
-		var l models.Link
-		if err := rows.Scan(&l.ID, &l.OriginalURL, &l.Description, &l.Content, &l.DateAdded); err != nil {
+		var l gen.Link
+		if err := rows.Scan(&l.LinkId, &l.OriginalUrl, &l.Description); err != nil {
 			log.Println("[DB] error scanning row in GetLinksByUsernameDesc():", err)
 			return nil, err
 		}
-		l.UserName = username
-		links = append(links, l)
+		links = append(links, &l)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -108,6 +103,16 @@ func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, 
 	}
 
 	return links, nil
+}
+
+func (p *Postgres) GetLinkByID(ctx context.Context, id int) (*models.Link, error) {
+	q := `SELECT original_url, username, description, content FROM links WHERE id = $1`
+	l := models.Link{}
+	err := p.db.QueryRowContext(ctx, q, id).Scan(&l.OriginalURL, &l.UserName, &l.Description, &l.Content)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 
 func (p *Postgres) DeleteLink(ctx context.Context, l *models.Link) error {
