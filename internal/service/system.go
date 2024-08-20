@@ -2,43 +2,37 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 	"github.com/0x0FACED/proto-files/link_service/gen"
 	"github.com/gocolly/colly"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*gen.SaveLinkResponse, error) {
-	log.Printf("Received link: %s with description: %s by user: %s", req.OriginalUrl, req.Description, req.Username)
-	// create collector
-	c := colly.NewCollector()
+	s.Logger.Debug("Received link",
+		zap.String("user", req.Username),
+		zap.String("desc", req.Description),
+		zap.String("url", req.OriginalUrl),
+	)
 
 	// onHTML -> html page, save to page.html
-	c.OnHTML("html", func(e *colly.HTMLElement) {
+	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
 		link := &models.Link{
 			OriginalURL: req.OriginalUrl,
 			UserName:    req.Username,
 			Description: req.Description,
 			Content:     []byte(e.Response.Body),
 		}
-		// save page as bytea to database and to redis with exp 24h
-		err := s.save(context.TODO(), link)
+		s.Logger.Debug("Visited link", zap.Any("link", link))
+		// save page as bytea to database
+		err := s.saveToDatabase(ctx, link)
 		if err != nil {
-			log.Println("OnHTML err: ", err)
+			s.Logger.Error("Failed to save to db: " + err.Error())
 			return
 		}
-		log.Printf("HTML page saved with name: %v", req.Description)
+		s.Logger.Debug("Link successfully saved to db", zap.Any("link", link))
 	})
 
 	// onHTML -> image, save to imgURL.png/jpg file
@@ -69,19 +63,19 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	})*/
 
 	// start parse html page
-	err := c.Visit(req.OriginalUrl)
+	err := s.colly.Visit(req.OriginalUrl)
 	if err != nil {
+		s.Logger.Error("Error while scrap HTML",
+			zap.String("err", err.Error()),
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+			zap.String("url", req.OriginalUrl),
+		)
 		return &gen.SaveLinkResponse{Success: false}, err
 	}
 
-	log.Println("Finished!")
+	s.Logger.Info("Finished", zap.String("user", req.Username))
 	return &gen.SaveLinkResponse{Success: true}, nil
-}
-
-func hash(username, url string) string {
-	data := fmt.Sprintf("%s:%s:%d", username, url, time.Now().UnixNano())
-	hash := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(hash[:])
 }
 
 func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest) (*gen.DeleteLinkResponse, error) {
@@ -90,69 +84,58 @@ func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest
 }
 
 func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*gen.GetLinksResponse, error) {
-	return &gen.GetLinksResponse{Links: []*gen.Link{}}, nil
+	links, err := s.db.GetLinksByUsernameDesc(ctx, req.Username, req.Description)
+	if err != nil {
+		s.Logger.Error("Failed to get links by username and desc",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+		)
+		return &gen.GetLinksResponse{Links: nil}, err
+	}
+	s.Logger.Debug("Found links", zap.String("user", req.Username), zap.Any("links", links))
+	return &gen.GetLinksResponse{Links: links}, nil
 }
 
-func (s *LinkService) save(ctx context.Context, link *models.Link) error {
-	err := s.db.SaveLink(ctx, link)
+func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*gen.GetLinkResponse, error) {
+	redisLink, err := s.redis.GetLink(ctx, req.Username, req.Description)
+	if err != nil && err != redis.Nil {
+		s.Logger.Error("Failed to get link from Redis",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	if redisLink != nil {
+		s.Logger.Debug("Link found in Redis",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+		)
+		return &gen.GetLinkResponse{GeneratedUrl: redisLink.Link}, nil
+	}
+
+	l, err := s.db.GetLinkByID(ctx, int(req.UrlId))
 	if err != nil {
-		return err
+		s.Logger.Error("Failed to get link by id from Postgres",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+			zap.Error(err),
+		)
+		return nil, err
 	}
-	gen := hash(link.UserName, link.OriginalURL)
-	log.Println("generated link: ", gen)
-	err = s.redis.SaveLink(ctx, link.UserName, gen)
+
+	generatedLink := hash(l.UserName, l.OriginalURL)
+
+	err = s.redis.SaveLink(ctx, l.UserName, l.Description, generatedLink)
 	if err != nil {
-		// TODO: maybe delete from db if cant save to redis
-		return err
+		s.Logger.Error("Failed to save link to Redis",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+			zap.Error(err),
+		)
+		return nil, err
 	}
 
-	log.Println("Successfully saved")
-	return nil
-}
-
-func getFileNameFromURL(urlStr string) string {
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		return "unknown"
-	}
-
-	fileName := strings.ReplaceAll(parsedURL.Path, "/", "_")
-	if fileName == "" {
-		fileName = "unknown.html"
-	}
-
-	return fileName
-}
-
-func resolveURL(relURL string, baseURL *url.URL) string {
-	parsedURL, err := url.Parse(relURL)
-	if err != nil {
-		return relURL
-	}
-	return baseURL.ResolveReference(parsedURL).String()
-}
-
-func downloadFile(outputDir, urlStr string) error {
-	resp, err := http.Get(urlStr)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	fileName := getFileNameFromURL(urlStr)
-	filePath := filepath.Join(outputDir, fileName)
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Saved file: %s", filePath)
-	return nil
+	return &gen.GetLinkResponse{GeneratedUrl: generatedLink}, nil
 }
