@@ -26,6 +26,26 @@ func (p *Postgres) SaveUser(ctx context.Context, tx *sql.Tx, u *models.User) (in
 	return id, nil
 }
 
+func (p *Postgres) GetUsernameByID(ctx context.Context, tx *sql.Tx, id int) (string, error) {
+	var username string
+	var err error
+	q := `SELECT username FROM users WHERE id = $1`
+	if tx != nil {
+		err = tx.QueryRowContext(ctx, q, id).Scan(&username)
+	} else {
+		err = p.db.QueryRowContext(ctx, q, id).Scan(&username)
+	}
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", storage.ErrUserNotFound
+		}
+		log.Println("[DB] error GetUserByUsername():", err)
+		return "", err
+	}
+	return username, nil
+}
+
 func (p *Postgres) GetUserByUsername(ctx context.Context, tx *sql.Tx, username string) (*models.User, error) {
 	var u models.User
 	var err error
