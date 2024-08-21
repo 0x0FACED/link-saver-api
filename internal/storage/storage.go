@@ -28,6 +28,7 @@ type UserWorker interface {
 	SaveUser(ctx context.Context, tx *sql.Tx, u *models.User) (int, error)
 	GetUserByUsername(ctx context.Context, tx *sql.Tx, username string) (*models.User, error)
 	GetUserIDByUsername(ctx context.Context, tx *sql.Tx, username string) (int, error)
+	GetUsernameByID(ctx context.Context, tx *sql.Tx, id int) (string, error)
 }
 
 type LinkWorker interface {
