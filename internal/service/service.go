@@ -47,6 +47,7 @@ func New(cfg config.DatabaseConfig, redis *redis.Redis, logger *logger.ZapLogger
 
 	c := colly.NewCollector(
 		colly.Async(true),
+		colly.AllowURLRevisit(),
 	)
 	return &LinkService{
 		db:     db,
