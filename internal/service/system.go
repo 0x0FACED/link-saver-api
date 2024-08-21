@@ -27,12 +27,12 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 		}
 		s.Logger.Debug("Visited link", zap.Any("link", link))
 		// save page as bytea to database
-		err := s.saveToDatabase(ctx, link)
+		err := s.saveToDatabase(context.TODO(), link)
 		if err != nil {
 			s.Logger.Error("Failed to save to db: " + err.Error())
 			return
 		}
-		s.Logger.Debug("Link successfully saved to db", zap.Any("link", link))
+		s.Logger.Debug("Link successfully saved to db")
 	})
 
 	// onHTML -> image, save to imgURL.png/jpg file
@@ -97,7 +97,23 @@ func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*
 }
 
 func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*gen.GetLinkResponse, error) {
-	redisLink, err := s.redis.GetLink(ctx, req.Username, req.Description)
+	s.Logger.Debug("New req",
+		zap.String("user", req.Username),
+		zap.String("desc", req.Description),
+		zap.Int32("url_id", req.UrlId),
+	)
+
+	l, err := s.db.GetLinkByID(ctx, int(req.UrlId))
+	if err != nil {
+		s.Logger.Error("Failed to get link by id from Postgres",
+			zap.String("user", req.Username),
+			zap.String("desc", req.Description),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+
+	redisLink, err := s.redis.GetLink(ctx, req.Username, l.OriginalURL)
 	if err != nil && err != redis.Nil {
 		s.Logger.Error("Failed to get link from Redis",
 			zap.String("user", req.Username),
@@ -115,27 +131,24 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 		return &gen.GetLinkResponse{GeneratedUrl: redisLink.Link}, nil
 	}
 
-	l, err := s.db.GetLinkByID(ctx, int(req.UrlId))
-	if err != nil {
-		s.Logger.Error("Failed to get link by id from Postgres",
-			zap.String("user", req.Username),
-			zap.String("desc", req.Description),
-			zap.Error(err),
-		)
-		return nil, err
-	}
-
 	generatedLink := hash(l.UserName, l.OriginalURL)
 
-	err = s.redis.SaveLink(ctx, l.UserName, l.Description, generatedLink)
+	err = s.redis.SaveLink(ctx, l.UserName, generatedLink, l.OriginalURL, int32(l.ID))
 	if err != nil {
 		s.Logger.Error("Failed to save link to Redis",
 			zap.String("user", req.Username),
 			zap.String("desc", req.Description),
+			zap.Int32("url_id", req.UrlId),
 			zap.Error(err),
 		)
 		return nil, err
 	}
+
+	s.Logger.Debug("Saved to redis",
+		zap.String("user", req.Username),
+		zap.String("desc", req.Description),
+		zap.String("gen_url", generatedLink),
+	)
 
 	return &gen.GetLinkResponse{GeneratedUrl: generatedLink}, nil
 }
