@@ -34,6 +34,7 @@ type UserWorker interface {
 type LinkWorker interface {
 	SaveLink(ctx context.Context, l *models.Link) error
 	GetUserLinks(ctx context.Context, username string) ([]*gen.Link, error)
+	GetContentByUsernameOriginalURL(ctx context.Context, username, originalURL string) ([]byte, error)
 	GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]*gen.Link, error)
 	GetLinkByID(ctx context.Context, id int) (*models.Link, error)
 	DeleteLink(ctx context.Context, l *models.Link) error
