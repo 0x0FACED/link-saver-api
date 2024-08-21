@@ -51,6 +51,40 @@ func (r *Redis) SaveLink(ctx context.Context, username, url, originalURL string,
 	return nil
 }
 
+func (r *Redis) GetOriginalURL(ctx context.Context, username, generatedLink string) (string, error) {
+	globalKey := fmt.Sprintf("links:%s:urls", username)
+
+	urls, err := r.client.SMembers(ctx, globalKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			log.Println("No URLs found for this user in Redis")
+			return "", nil
+		}
+		log.Println("Error retrieving URLs from Redis: ", err)
+		return "", err
+	}
+
+	for _, originalURL := range urls {
+		key := fmt.Sprintf("links:%s:%s", username, originalURL)
+
+		value, err := r.client.Get(ctx, key).Result()
+		if err != nil {
+			if err == redis.Nil {
+				continue
+			}
+			log.Println("Error retrieving link from Redis: ", err)
+			return "", err
+		}
+
+		parts := strings.SplitN(value, ":", 2)
+		if len(parts) == 2 && parts[1] == generatedLink {
+			return originalURL, nil
+		}
+	}
+
+	return "", nil
+}
+
 func (r *Redis) GetLink(ctx context.Context, username, originalURL string) (*RedisLink, error) {
 	key := fmt.Sprintf("links:%s:%s", username, originalURL)
 
