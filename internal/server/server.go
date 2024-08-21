@@ -48,6 +48,7 @@ func Start() error {
 	logger.Info("Config loaded")
 	srv := New(cfg, logger)
 	srv.configureRouter()
+	go srv.echo.Start(srv.config.Host + ":" + srv.config.Port)
 	logger.Info("Server created and router configured")
 	gen.RegisterLinkServiceServer(s, srv.service)
 	logger.Info("Service registered and started, waiting for connections...")
