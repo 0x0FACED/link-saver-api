@@ -25,7 +25,7 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			Description: req.Description,
 			Content:     []byte(e.Response.Body),
 		}
-		s.Logger.Debug("Visited link", zap.Any("link", link))
+		s.Logger.Debug("Visited link", zap.String("url", link.OriginalURL))
 		// save page as bytea to database
 		err := s.saveToDatabase(context.TODO(), link)
 		if err != nil {
@@ -128,7 +128,12 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 			zap.String("user", req.Username),
 			zap.String("desc", req.Description),
 		)
-		return &gen.GetLinkResponse{GeneratedUrl: redisLink.Link}, nil
+
+		fullURL := getFullLink(l.UserName, redisLink.Link)
+		s.Logger.Debug("Generated Full Link",
+			zap.String("full_link", fullURL),
+		)
+		return &gen.GetLinkResponse{GeneratedUrl: fullURL}, nil
 	}
 
 	generatedLink := hash(l.UserName, l.OriginalURL)
@@ -150,5 +155,11 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 		zap.String("gen_url", generatedLink),
 	)
 
-	return &gen.GetLinkResponse{GeneratedUrl: generatedLink}, nil
+	fullURL := getFullLink(l.UserName, generatedLink)
+
+	s.Logger.Debug("Generated Full Link",
+		zap.String("full_link", fullURL),
+	)
+
+	return &gen.GetLinkResponse{GeneratedUrl: fullURL}, nil
 }
