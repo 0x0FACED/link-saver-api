@@ -73,6 +73,22 @@ func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]*gen.Li
 	return links, nil
 }
 
+func (p *Postgres) GetContentByUsernameOriginalURL(ctx context.Context, username, originalURL string) ([]byte, error) {
+	userID, err := p.GetUserIDByUsername(ctx, nil, username)
+	if err != nil {
+		return nil, err
+	}
+	var content []byte
+
+	q := `SELECT content FROM links WHERE user_id = $1 AND original_url = $2`
+	err = p.db.QueryRowContext(ctx, q, userID, originalURL).Scan(&content)
+	if err != nil {
+		return nil, err
+	}
+
+	return content, nil
+}
+
 func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]*gen.Link, error) {
 	userID, err := p.GetUserIDByUsername(ctx, nil, username)
 	if err != nil {
