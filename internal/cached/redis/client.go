@@ -15,8 +15,8 @@ type Redis struct {
 	client *redis.Client
 }
 type RedisLink struct {
-	Description string
-	Link        string
+	ID   string
+	Link string
 }
 
 func New(cfg config.RedisConfig) *Redis {
@@ -30,22 +30,31 @@ func New(cfg config.RedisConfig) *Redis {
 	}
 }
 
-func (r *Redis) SaveLink(ctx context.Context, username, description, url string) error {
-	key := fmt.Sprintf("links:%s", username)
-	field := fmt.Sprintf("%s:%s", description, url)
+func (r *Redis) SaveLink(ctx context.Context, username, url, originalURL string, urlID int32) error {
+	key := fmt.Sprintf("links:%s:%s", username, originalURL)
+	value := fmt.Sprintf("%d:%s", urlID, url)
 
-	_, err := r.client.HSet(ctx, key, field, 24*time.Hour).Result()
+	err := r.client.SetEx(ctx, key, value, 24*time.Hour).Err()
 	if err != nil {
-		log.Println("Error saving link to Redis: ", err)
+		log.Println("Error saving link to Redis with expiration: ", err)
 		return err
 	}
+
+	globalKey := fmt.Sprintf("links:%s:urls", username)
+
+	_, err = r.client.SAdd(ctx, globalKey, originalURL).Result()
+	if err != nil {
+		log.Println("Error adding URL to user's list in Redis: ", err)
+		return err
+	}
+
 	return nil
 }
 
-func (r *Redis) GetLink(ctx context.Context, username, description string) (*RedisLink, error) {
-	key := fmt.Sprintf("links:%s", username)
+func (r *Redis) GetLink(ctx context.Context, username, originalURL string) (*RedisLink, error) {
+	key := fmt.Sprintf("links:%s:%s", username, originalURL)
 
-	linksMap, err := r.client.HGetAll(ctx, key).Result()
+	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
 			log.Println("Key doesn't exist in Redis")
@@ -55,67 +64,73 @@ func (r *Redis) GetLink(ctx context.Context, username, description string) (*Red
 		return nil, err
 	}
 
-	for field, url := range linksMap {
-		if strings.HasPrefix(field, description+":") {
-			return &RedisLink{
-				Description: description,
-				Link:        url,
-			}, nil
-		}
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid value format in Redis")
 	}
 
-	return nil, redis.Nil
+	return &RedisLink{
+		ID:   parts[0],
+		Link: parts[1],
+	}, nil
 }
 
 func (r *Redis) GetLinks(ctx context.Context, username string) ([]*RedisLink, error) {
-	key := fmt.Sprintf("links:%s", username)
+	globalKey := fmt.Sprintf("links:%s:urls", username)
 
-	linksMap, err := r.client.HGetAll(ctx, key).Result()
+	originalURLs, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
 		if err == redis.Nil {
 			log.Println("Key doesn't exist in Redis")
 			return nil, err
 		}
-		log.Println("Error retrieving links from Redis: ", err)
+		log.Println("Error retrieving user's URLs from Redis: ", err)
 		return nil, err
 	}
 
-	links := make([]*RedisLink, 0, len(linksMap))
-	for field, url := range linksMap {
-		parts := strings.SplitN(field, ":", 2)
-		if len(parts) == 2 {
-			links = append(links, &RedisLink{
-				Description: parts[0],
-				Link:        url,
-			})
+	links := make([]*RedisLink, 0, len(originalURLs))
+
+	for _, originalURL := range originalURLs {
+		key := fmt.Sprintf("links:%s:%s", username, originalURL)
+		value, err := r.client.Get(ctx, key).Result()
+		if err != nil {
+			if err == redis.Nil {
+				log.Println("Key doesn't exist in Redis: ", key)
+				continue
+			}
+			log.Println("Error retrieving link from Redis: ", err)
+			return nil, err
 		}
+
+		parts := strings.SplitN(value, ":", 2)
+		if len(parts) < 2 {
+			log.Println("Invalid value format in Redis for key: ", key)
+			continue
+		}
+
+		links = append(links, &RedisLink{
+			ID:   parts[0],
+			Link: parts[1],
+		})
 	}
 
 	return links, nil
 }
-func (r *Redis) DeleteLink(ctx context.Context, username, description string) error {
-	key := fmt.Sprintf("links:%s", username)
 
-	linksMap, err := r.client.HGetAll(ctx, key).Result()
+func (r *Redis) DeleteLink(ctx context.Context, username, originalURL string) error {
+	key := fmt.Sprintf("links:%s:%s", username, originalURL)
+
+	err := r.client.Del(ctx, key).Err()
 	if err != nil {
-		if err == redis.Nil {
-			log.Println("Key doesn't exist in Redis")
-			return err
-		}
-		log.Println("Error retrieving links from Redis: ", err)
+		log.Println("Error deleting link from Redis: ", err)
 		return err
 	}
 
-	for field := range linksMap {
-		if strings.HasPrefix(field, description+":") {
-			_, err := r.client.HDel(ctx, key, field).Result()
-			if err != nil {
-				log.Println("Error deleting link from Redis: ", err)
-				return err
-			}
-			log.Println("Deleted link: ", field)
-			break
-		}
+	globalKey := fmt.Sprintf("links:%s:urls", username)
+	_, err = r.client.SRem(ctx, globalKey, originalURL).Result()
+	if err != nil {
+		log.Println("Error removing URL from user's list in Redis: ", err)
+		return err
 	}
 
 	return nil
