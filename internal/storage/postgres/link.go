@@ -17,10 +17,10 @@ func (p *Postgres) SaveLink(ctx context.Context, l *models.Link) error {
 	}
 	defer tx.Rollback()
 
-	u, err := p.GetUserByUsername(ctx, tx, l.UserName)
-	var id int
+	id, err := p.GetUserIDByUsername(ctx, tx, l.UserName)
 	if err == storage.ErrUserNotFound {
-		u = &models.User{
+		u := &models.User{
+			ID:       id,
 			UserName: l.UserName,
 		}
 		id, err = p.SaveUser(ctx, tx, u)
@@ -106,9 +106,16 @@ func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, 
 }
 
 func (p *Postgres) GetLinkByID(ctx context.Context, id int) (*models.Link, error) {
-	q := `SELECT original_url, username, description, content FROM links WHERE id = $1`
+	q := `SELECT id, original_url, user_id, description FROM links WHERE id = $1`
 	l := models.Link{}
-	err := p.db.QueryRowContext(ctx, q, id).Scan(&l.OriginalURL, &l.UserName, &l.Description, &l.Content)
+	var userID int
+	err := p.db.QueryRowContext(ctx, q, id).Scan(&l.ID, &l.OriginalURL, &userID, &l.Description)
+	if err != nil {
+		return nil, err
+	}
+	var username string
+	username, err = p.GetUsernameByID(ctx, nil, userID)
+	l.UserName = username
 	if err != nil {
 		return nil, err
 	}
