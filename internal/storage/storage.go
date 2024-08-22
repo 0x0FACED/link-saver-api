@@ -26,16 +26,16 @@ type Database interface {
 
 type UserWorker interface {
 	SaveUser(ctx context.Context, tx *sql.Tx, u *models.User) (int, error)
-	GetUserByUsername(ctx context.Context, tx *sql.Tx, username string) (*models.User, error)
-	GetUserIDByUsername(ctx context.Context, tx *sql.Tx, username string) (int, error)
-	GetUsernameByID(ctx context.Context, tx *sql.Tx, id int) (string, error)
+	GetUserByTelegramID(ctx context.Context, tx *sql.Tx, userID int64) (*models.User, error)
+	GetUserIDByTelegramID(ctx context.Context, tx *sql.Tx, userID int64) (int, error)
+	GetTelegramIDByID(ctx context.Context, tx *sql.Tx, id int) (int64, error)
 }
 
 type LinkWorker interface {
 	SaveLink(ctx context.Context, l *models.Link) error
-	GetUserLinks(ctx context.Context, username string) ([]*gen.Link, error)
-	GetContentByUsernameOriginalURL(ctx context.Context, username, originalURL string) ([]byte, error)
-	GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]*gen.Link, error)
+	GetUserLinks(ctx context.Context, userID int64) ([]*gen.Link, error)
+	GetContentByTelegramIDOriginalURL(ctx context.Context, userID int64, originalURL string) ([]byte, error)
+	GetLinksByTelegramIDDesc(ctx context.Context, userID int64, desc string) ([]*gen.Link, error)
 	GetLinkByID(ctx context.Context, id int) (*models.Link, error)
 	DeleteLink(ctx context.Context, l *models.Link) error
 }

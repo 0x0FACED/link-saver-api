@@ -17,11 +17,11 @@ func (p *Postgres) SaveLink(ctx context.Context, l *models.Link) error {
 	}
 	defer tx.Rollback()
 
-	id, err := p.GetUserIDByUsername(ctx, tx, l.UserName)
+	id, err := p.GetUserIDByTelegramID(ctx, tx, l.UserID)
 	if err == storage.ErrUserNotFound {
 		u := &models.User{
-			ID:       id,
-			UserName: l.UserName,
+			ID:     id,
+			UserID: l.UserID,
 		}
 		id, err = p.SaveUser(ctx, tx, u)
 		if err != nil {
@@ -42,13 +42,13 @@ func (p *Postgres) SaveLink(ctx context.Context, l *models.Link) error {
 	return nil
 }
 
-func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]*gen.Link, error) {
-	userID, err := p.GetUserIDByUsername(ctx, nil, username)
+func (p *Postgres) GetUserLinks(ctx context.Context, userID int64) ([]*gen.Link, error) {
+	user_ID, err := p.GetUserIDByTelegramID(ctx, nil, userID)
 	if err != nil {
 		return nil, storage.ErrUserNotFound
 	}
 	q := `SELECT id, original_url, description FROM links WHERE user_id = $1`
-	rows, err := p.db.QueryContext(ctx, q, userID)
+	rows, err := p.db.QueryContext(ctx, q, user_ID)
 	if err != nil {
 		log.Println("[DB] error GetUserLinks():", err)
 		return nil, err
@@ -73,15 +73,15 @@ func (p *Postgres) GetUserLinks(ctx context.Context, username string) ([]*gen.Li
 	return links, nil
 }
 
-func (p *Postgres) GetContentByUsernameOriginalURL(ctx context.Context, username, originalURL string) ([]byte, error) {
-	userID, err := p.GetUserIDByUsername(ctx, nil, username)
+func (p *Postgres) GetContentByTelegramIDOriginalURL(ctx context.Context, userID int64, originalURL string) ([]byte, error) {
+	user_ID, err := p.GetUserIDByTelegramID(ctx, nil, userID)
 	if err != nil {
 		return nil, err
 	}
 	var content []byte
 
 	q := `SELECT content FROM links WHERE user_id = $1 AND original_url = $2`
-	err = p.db.QueryRowContext(ctx, q, userID, originalURL).Scan(&content)
+	err = p.db.QueryRowContext(ctx, q, user_ID, originalURL).Scan(&content)
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +89,14 @@ func (p *Postgres) GetContentByUsernameOriginalURL(ctx context.Context, username
 	return content, nil
 }
 
-func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, desc string) ([]*gen.Link, error) {
-	userID, err := p.GetUserIDByUsername(ctx, nil, username)
+func (p *Postgres) GetLinksByTelegramIDDesc(ctx context.Context, userID int64, desc string) ([]*gen.Link, error) {
+	user_ID, err := p.GetUserIDByTelegramID(ctx, nil, userID)
 	if err != nil {
 		return nil, storage.ErrUserNotFound
 	}
 
 	q := `SELECT id, original_url, description FROM links WHERE user_id = $1 AND description LIKE $2`
-	rows, err := p.db.QueryContext(ctx, q, userID, "%"+desc+"%")
+	rows, err := p.db.QueryContext(ctx, q, user_ID, "%"+desc+"%")
 	if err != nil {
 		log.Println("[DB] error GetLinksByUsernameDesc():", err)
 		return nil, err
@@ -124,14 +124,14 @@ func (p *Postgres) GetLinksByUsernameDesc(ctx context.Context, username string, 
 func (p *Postgres) GetLinkByID(ctx context.Context, id int) (*models.Link, error) {
 	q := `SELECT id, original_url, user_id, description FROM links WHERE id = $1`
 	l := models.Link{}
-	var userID int
-	err := p.db.QueryRowContext(ctx, q, id).Scan(&l.ID, &l.OriginalURL, &userID, &l.Description)
+	var user_ID int
+	err := p.db.QueryRowContext(ctx, q, id).Scan(&l.ID, &l.OriginalURL, &user_ID, &l.Description)
 	if err != nil {
 		return nil, err
 	}
-	var username string
-	username, err = p.GetUsernameByID(ctx, nil, userID)
-	l.UserName = username
+	var userID int64
+	userID, err = p.GetTelegramIDByID(ctx, nil, user_ID)
+	l.UserID = userID
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (p *Postgres) DeleteLink(ctx context.Context, l *models.Link) error {
 	}
 	defer tx.Rollback()
 
-	userID, err := p.GetUserIDByUsername(ctx, tx, l.UserName)
+	userID, err := p.GetUserIDByTelegramID(ctx, tx, l.UserID)
 	if err != nil {
 		return storage.ErrUserNotFound
 	}

@@ -17,16 +17,16 @@ import (
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 )
 
-func (s *LinkService) GetContentFromDatabase(ctx context.Context, username, originalURL string) ([]byte, error) {
-	return s.db.GetContentByUsernameOriginalURL(ctx, username, originalURL)
+func (s *LinkService) GetContentFromDatabase(ctx context.Context, userID int64, originalURL string) ([]byte, error) {
+	return s.db.GetContentByTelegramIDOriginalURL(ctx, userID, originalURL)
 }
 
-func (s *LinkService) GetURLFromRedis(ctx context.Context, username, generatedURL string) (string, error) {
-	return s.redis.GetOriginalURL(ctx, username, generatedURL)
+func (s *LinkService) GetURLFromRedis(ctx context.Context, userID int64, generatedURL string) (string, error) {
+	return s.redis.GetOriginalURL(ctx, userID, generatedURL)
 }
 
-func hash(username, url string) string {
-	data := fmt.Sprintf("%s:%s:%d", username, url, time.Now().UnixNano())
+func hash(userID int64, url string) string {
+	data := fmt.Sprintf("%s:%d:%d", userID, url, time.Now().UnixNano())
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
@@ -48,8 +48,8 @@ func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) err
 	return nil
 }
 
-func getFullLink(username, generatedURL string) string {
-	return "http://localhost:8000" + "/gen" + "/" + username + "/" + generatedURL
+func getFullLink(userID int64, generatedURL string) string {
+	return fmt.Sprintf("http://localhost:8000/gen/%d/%s", userID, generatedURL)
 }
 
 func getFileNameFromURL(urlStr string) string {
