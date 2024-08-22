@@ -8,11 +8,13 @@ import (
 	"github.com/gocolly/colly"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*gen.SaveLinkResponse, error) {
 	s.Logger.Debug("Received link",
-		zap.String("user", req.Username),
+		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 		zap.String("url", req.OriginalUrl),
 	)
@@ -21,7 +23,7 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
 		link := &models.Link{
 			OriginalURL: req.OriginalUrl,
-			UserName:    req.Username,
+			UserID:      req.UserId,
 			Description: req.Description,
 			Content:     []byte(e.Response.Body),
 		}
@@ -67,14 +69,14 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	if err != nil {
 		s.Logger.Error("Error while scrap HTML",
 			zap.String("err", err.Error()),
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 			zap.String("url", req.OriginalUrl),
 		)
 		return &gen.SaveLinkResponse{Success: false}, err
 	}
 
-	s.Logger.Info("Finished", zap.String("user", req.Username))
+	s.Logger.Info("Finished", zap.Int64("user", req.UserId))
 	return &gen.SaveLinkResponse{Success: true}, nil
 }
 
@@ -84,21 +86,26 @@ func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest
 }
 
 func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*gen.GetLinksResponse, error) {
-	links, err := s.db.GetLinksByUsernameDesc(ctx, req.Username, req.Description)
+	s.Logger.Debug("New req GetLinks()",
+		zap.Int64("user", req.UserId),
+		zap.String("desc", req.Description),
+	)
+
+	links, err := s.db.GetLinksByTelegramIDDesc(ctx, req.UserId, req.Description)
 	if err != nil {
 		s.Logger.Error("Failed to get links by username and desc",
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 		)
 		return &gen.GetLinksResponse{Links: nil}, err
 	}
-	s.Logger.Debug("Found links", zap.String("user", req.Username), zap.Any("links", links))
+	s.Logger.Debug("Found links", zap.Int64("user", req.UserId), zap.Any("links", links))
 	return &gen.GetLinksResponse{Links: links}, nil
 }
 
 func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*gen.GetLinkResponse, error) {
-	s.Logger.Debug("New req",
-		zap.String("user", req.Username),
+	s.Logger.Debug("New req GetLink()",
+		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 		zap.Int32("url_id", req.UrlId),
 	)
@@ -106,17 +113,17 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 	l, err := s.db.GetLinkByID(ctx, int(req.UrlId))
 	if err != nil {
 		s.Logger.Error("Failed to get link by id from Postgres",
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 			zap.Error(err),
 		)
 		return nil, err
 	}
 
-	redisLink, err := s.redis.GetLink(ctx, req.Username, l.OriginalURL)
+	redisLink, err := s.redis.GetLink(ctx, req.UserId, l.OriginalURL)
 	if err != nil && err != redis.Nil {
 		s.Logger.Error("Failed to get link from Redis",
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 			zap.Error(err),
 		)
@@ -125,23 +132,23 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 
 	if redisLink != nil {
 		s.Logger.Debug("Link found in Redis",
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 		)
 
-		fullURL := getFullLink(l.UserName, redisLink.Link)
+		fullURL := getFullLink(l.UserID, redisLink.Link)
 		s.Logger.Debug("Generated Full Link",
 			zap.String("full_link", fullURL),
 		)
 		return &gen.GetLinkResponse{GeneratedUrl: fullURL}, nil
 	}
 
-	generatedLink := hash(l.UserName, l.OriginalURL)
+	generatedLink := hash(l.UserID, l.OriginalURL)
 
-	err = s.redis.SaveLink(ctx, l.UserName, generatedLink, l.OriginalURL, int32(l.ID))
+	err = s.redis.SaveLink(ctx, l.UserID, generatedLink, l.OriginalURL, int32(l.ID))
 	if err != nil {
 		s.Logger.Error("Failed to save link to Redis",
-			zap.String("user", req.Username),
+			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 			zap.Int32("url_id", req.UrlId),
 			zap.Error(err),
@@ -150,16 +157,37 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 	}
 
 	s.Logger.Debug("Saved to redis",
-		zap.String("user", req.Username),
+		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 		zap.String("gen_url", generatedLink),
 	)
 
-	fullURL := getFullLink(l.UserName, generatedLink)
+	fullURL := getFullLink(l.UserID, generatedLink)
 
 	s.Logger.Debug("Generated Full Link",
 		zap.String("full_link", fullURL),
 	)
 
 	return &gen.GetLinkResponse{GeneratedUrl: fullURL}, nil
+}
+
+func (s *LinkService) GetAllLinks(ctx context.Context, req *gen.GetAllLinksRequest) (*gen.GetAllLinksResponse, error) {
+	s.Logger.Debug("New req GetAllLinks()",
+		zap.Int64("user", req.UserId),
+	)
+
+	links, err := s.db.GetLinksByTelegramIDDesc(ctx, req.UserId, "")
+	if err != nil {
+		s.Logger.Error("Failed to get all links from DB",
+			zap.Int64("user", req.UserId),
+			zap.Error(err),
+		)
+		return nil, status.Errorf(codes.Aborted, "Can't get all links from DB, err: %s", err)
+	}
+
+	resp := &gen.GetAllLinksResponse{
+		Links: links,
+	}
+
+	return resp, nil
 }
