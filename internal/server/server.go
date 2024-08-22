@@ -66,5 +66,5 @@ func (s *server) configureRouter() {
 	s.echo.Use(middleware.Recover())
 
 	// handler to return html page to user
-	s.echo.GET("/gen/:username/:url", s.serveLink)
+	s.echo.GET("/gen/:user_id/:url", s.serveLink)
 }
