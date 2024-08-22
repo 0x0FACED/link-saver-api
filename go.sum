@@ -1,5 +1,5 @@
-github.com/0x0FACED/proto-files v0.0.1 h1:aTKC70IdrxRcyb9CXpiGZo0c8iSZKxmq9+zbwIUB/fM=
-github.com/0x0FACED/proto-files v0.0.1/go.mod h1:z6arTnwlfYO8GumXVA7G9JQN+GqngboMH1xHjHgNRsQ=
+github.com/0x0FACED/proto-files v0.0.4 h1:fKullr0+w8hqkpH1hAAq6GaDzJ2W7YHwTQgM3x8zNd4=
+github.com/0x0FACED/proto-files v0.0.4/go.mod h1:z6arTnwlfYO8GumXVA7G9JQN+GqngboMH1xHjHgNRsQ=
 github.com/Microsoft/go-winio v0.6.1 h1:9/kr64B9VUZrLm5YYwbGtUJnMgqWVOdUAXu6Migciow=
 github.com/Microsoft/go-winio v0.6.1/go.mod h1:LRdKpFKfdobln8UmuiYcKPot9D2v6svN5+sAH+4kjUM=
 github.com/PuerkitoBio/goquery v1.9.2 h1:4/wZksC3KgkQw7SQgkKotmKljk0M6V8TUvA8Wb4yPeE=
