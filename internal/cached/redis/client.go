@@ -30,8 +30,8 @@ func New(cfg config.RedisConfig) *Redis {
 	}
 }
 
-func (r *Redis) SaveLink(ctx context.Context, username, url, originalURL string, urlID int32) error {
-	key := fmt.Sprintf("links:%s:%s", username, originalURL)
+func (r *Redis) SaveLink(ctx context.Context, userId int64, url, originalURL string, urlID int32) error {
+	key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 	value := fmt.Sprintf("%d:%s", urlID, url)
 
 	err := r.client.SetEx(ctx, key, value, 24*time.Hour).Err()
@@ -40,7 +40,7 @@ func (r *Redis) SaveLink(ctx context.Context, username, url, originalURL string,
 		return err
 	}
 
-	globalKey := fmt.Sprintf("links:%s:urls", username)
+	globalKey := fmt.Sprintf("links:%d:urls", userId)
 
 	_, err = r.client.SAdd(ctx, globalKey, originalURL).Result()
 	if err != nil {
@@ -51,8 +51,8 @@ func (r *Redis) SaveLink(ctx context.Context, username, url, originalURL string,
 	return nil
 }
 
-func (r *Redis) GetOriginalURL(ctx context.Context, username, generatedLink string) (string, error) {
-	globalKey := fmt.Sprintf("links:%s:urls", username)
+func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink string) (string, error) {
+	globalKey := fmt.Sprintf("links:%d:urls", userId)
 
 	urls, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
@@ -65,7 +65,7 @@ func (r *Redis) GetOriginalURL(ctx context.Context, username, generatedLink stri
 	}
 
 	for _, originalURL := range urls {
-		key := fmt.Sprintf("links:%s:%s", username, originalURL)
+		key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 
 		value, err := r.client.Get(ctx, key).Result()
 		if err != nil {
@@ -85,8 +85,8 @@ func (r *Redis) GetOriginalURL(ctx context.Context, username, generatedLink stri
 	return "", nil
 }
 
-func (r *Redis) GetLink(ctx context.Context, username, originalURL string) (*RedisLink, error) {
-	key := fmt.Sprintf("links:%s:%s", username, originalURL)
+func (r *Redis) GetLink(ctx context.Context, userId int64, originalURL string) (*RedisLink, error) {
+	key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 
 	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
@@ -109,8 +109,8 @@ func (r *Redis) GetLink(ctx context.Context, username, originalURL string) (*Red
 	}, nil
 }
 
-func (r *Redis) GetLinks(ctx context.Context, username string) ([]*RedisLink, error) {
-	globalKey := fmt.Sprintf("links:%s:urls", username)
+func (r *Redis) GetLinks(ctx context.Context, userId int64) ([]*RedisLink, error) {
+	globalKey := fmt.Sprintf("links:%d:urls", userId)
 
 	originalURLs, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
@@ -125,7 +125,7 @@ func (r *Redis) GetLinks(ctx context.Context, username string) ([]*RedisLink, er
 	links := make([]*RedisLink, 0, len(originalURLs))
 
 	for _, originalURL := range originalURLs {
-		key := fmt.Sprintf("links:%s:%s", username, originalURL)
+		key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 		value, err := r.client.Get(ctx, key).Result()
 		if err != nil {
 			if err == redis.Nil {
@@ -151,8 +151,8 @@ func (r *Redis) GetLinks(ctx context.Context, username string) ([]*RedisLink, er
 	return links, nil
 }
 
-func (r *Redis) DeleteLink(ctx context.Context, username, originalURL string) error {
-	key := fmt.Sprintf("links:%s:%s", username, originalURL)
+func (r *Redis) DeleteLink(ctx context.Context, userId int64, originalURL string) error {
+	key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 
 	err := r.client.Del(ctx, key).Err()
 	if err != nil {
@@ -160,7 +160,7 @@ func (r *Redis) DeleteLink(ctx context.Context, username, originalURL string) er
 		return err
 	}
 
-	globalKey := fmt.Sprintf("links:%s:urls", username)
+	globalKey := fmt.Sprintf("links:%d:urls", userId)
 	_, err = r.client.SRem(ctx, globalKey, originalURL).Result()
 	if err != nil {
 		log.Println("Error removing URL from user's list in Redis: ", err)
