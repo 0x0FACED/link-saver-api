@@ -18,54 +18,27 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 		zap.String("desc", req.Description),
 		zap.String("url", req.OriginalUrl),
 	)
-
-	// onHTML -> html page, save to page.html
+	statusCode := -1
+	var link *models.Link
+	// onHTML -> html page visiting and saving
 	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
-		link := &models.Link{
+		link = &models.Link{
 			OriginalURL: req.OriginalUrl,
 			UserID:      req.UserId,
 			Description: req.Description,
 			Content:     []byte(e.Response.Body),
 		}
 		s.Logger.Debug("Visited link", zap.String("url", link.OriginalURL))
-		// save page as bytea to database
-		err := s.saveToDatabase(context.TODO(), link)
-		if err != nil {
-			s.Logger.Error("Failed to save to db: " + err.Error())
-			return
-		}
-		s.Logger.Debug("Link successfully saved to db")
 	})
 
-	// onHTML -> image, save to imgURL.png/jpg file
-	/*c.OnHTML("img[src]", func(e *colly.HTMLElement) {
-		imgURL := resolveURL(e.Attr("src"), e.Request.URL)
-		err := downloadFile(outputDir, imgURL)
-		if err != nil {
-			log.Printf("Error saving image: %v", err)
-		}
-	})*/
-
-	// onHTML -> stylesheet (CSS), save to css file
-	/*c.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
-		cssURL := resolveURL(e.Attr("href"), e.Request.URL)
-		err := downloadFile(outputDir, cssURL)
-		if err != nil {
-			log.Printf("Error saving CSS: %v", err)
-		}
-	})*/
-
-	// onHTML -> script (js), save to js file
-	/*c.OnHTML("script[src]", func(e *colly.HTMLElement) {
-		jsURL := resolveURL(e.Attr("src"), e.Request.URL)
-		err := downloadFile(outputDir, jsURL)
-		if err != nil {
-			log.Printf("Error saving JavaScript: %v", err)
-		}
-	})*/
+	s.colly.OnError(func(r *colly.Response, e error) {
+		statusCode = r.StatusCode
+		s.Logger.Debug("OnError()", zap.Error(e), zap.Int("status_code", r.StatusCode))
+	})
 
 	// start parse html page
 	err := s.colly.Visit(req.OriginalUrl)
+	s.colly.Wait()
 	if err != nil {
 		s.Logger.Error("Error while scrap HTML",
 			zap.String("err", err.Error()),
@@ -73,11 +46,23 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			zap.String("desc", req.Description),
 			zap.String("url", req.OriginalUrl),
 		)
-		return &gen.SaveLinkResponse{Success: false}, err
+		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, err
 	}
 
 	s.Logger.Info("Finished", zap.Int64("user", req.UserId))
-	return &gen.SaveLinkResponse{Success: true}, nil
+	if statusCode == 0 || link == nil {
+		s.Logger.Info("Not Saved", zap.Int64("user", req.UserId))
+		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, err
+	}
+
+	// save page as bytea to database
+	err = s.saveToDatabase(context.TODO(), link)
+	if err != nil {
+		s.Logger.Error("Failed to save to db: " + err.Error())
+		return &gen.SaveLinkResponse{Success: true, Message: "Not saved, already exists"}, err
+	}
+	s.Logger.Debug("Link successfully saved to db")
+	return &gen.SaveLinkResponse{Success: true, Message: "Succeefully saved"}, nil
 }
 
 func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest) (*gen.DeleteLinkResponse, error) {
