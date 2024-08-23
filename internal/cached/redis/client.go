@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -36,7 +35,6 @@ func (r *Redis) SaveLink(ctx context.Context, userId int64, url, originalURL str
 
 	err := r.client.SetEx(ctx, key, value, 24*time.Hour).Err()
 	if err != nil {
-		log.Println("Error saving link to Redis with expiration: ", err)
 		return err
 	}
 
@@ -44,7 +42,6 @@ func (r *Redis) SaveLink(ctx context.Context, userId int64, url, originalURL str
 
 	_, err = r.client.SAdd(ctx, globalKey, originalURL).Result()
 	if err != nil {
-		log.Println("Error adding URL to user's list in Redis: ", err)
 		return err
 	}
 
@@ -57,10 +54,8 @@ func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink 
 	urls, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			log.Println("No URLs found for this user in Redis")
 			return "", nil
 		}
-		log.Println("Error retrieving URLs from Redis: ", err)
 		return "", err
 	}
 
@@ -72,7 +67,6 @@ func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink 
 			if err == redis.Nil {
 				continue
 			}
-			log.Println("Error retrieving link from Redis: ", err)
 			return "", err
 		}
 
@@ -91,10 +85,8 @@ func (r *Redis) GetLink(ctx context.Context, userId int64, originalURL string) (
 	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			log.Println("Key doesn't exist in Redis")
 			return nil, err
 		}
-		log.Println("Error retrieving link from Redis: ", err)
 		return nil, err
 	}
 
@@ -115,10 +107,8 @@ func (r *Redis) GetLinks(ctx context.Context, userId int64) ([]*RedisLink, error
 	originalURLs, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			log.Println("Key doesn't exist in Redis")
 			return nil, err
 		}
-		log.Println("Error retrieving user's URLs from Redis: ", err)
 		return nil, err
 	}
 
@@ -129,16 +119,13 @@ func (r *Redis) GetLinks(ctx context.Context, userId int64) ([]*RedisLink, error
 		value, err := r.client.Get(ctx, key).Result()
 		if err != nil {
 			if err == redis.Nil {
-				log.Println("Key doesn't exist in Redis: ", key)
 				continue
 			}
-			log.Println("Error retrieving link from Redis: ", err)
 			return nil, err
 		}
 
 		parts := strings.SplitN(value, ":", 2)
 		if len(parts) < 2 {
-			log.Println("Invalid value format in Redis for key: ", key)
 			continue
 		}
 
@@ -156,14 +143,12 @@ func (r *Redis) DeleteLink(ctx context.Context, userId int64, originalURL string
 
 	err := r.client.Del(ctx, key).Err()
 	if err != nil {
-		log.Println("Error deleting link from Redis: ", err)
 		return err
 	}
 
 	globalKey := fmt.Sprintf("links:%d:urls", userId)
 	_, err = r.client.SRem(ctx, globalKey, originalURL).Result()
 	if err != nil {
-		log.Println("Error removing URL from user's list in Redis: ", err)
 		return err
 	}
 
