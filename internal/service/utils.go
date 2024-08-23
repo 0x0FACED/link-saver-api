@@ -26,7 +26,7 @@ func (s *LinkService) GetURLFromRedis(ctx context.Context, userID int64, generat
 }
 
 func hash(userID int64, url string) string {
-	data := fmt.Sprintf("%s:%d:%d", userID, url, time.Now().UnixNano())
+	data := fmt.Sprintf("%d:%s:%d", userID, url, time.Now().UnixNano())
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
