@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var pkg = "service"
+
 type LinkService struct {
 	gen.UnimplementedLinkServiceServer
 
@@ -49,6 +51,9 @@ func New(cfg config.DatabaseConfig, redis *redis.Redis, logger *logger.ZapLogger
 		colly.Async(true),
 		colly.AllowURLRevisit(),
 	)
+
+	logger.Info("Created colly instance")
+
 	return &LinkService{
 		db:     db,
 		redis:  redis,
