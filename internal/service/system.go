@@ -61,7 +61,7 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	err = s.saveToDatabase(context.TODO(), link)
 	if err != nil {
 		s.Logger.Error("Failed to save to db", zap.Error(err))
-		return &gen.SaveLinkResponse{Success: true, Message: "Not saved, already exists"}, status.Error(codes.AlreadyExists, "link already exists")
+		return &gen.SaveLinkResponse{Success: false, Message: "Not saved, already exists"}, status.Error(codes.AlreadyExists, "link already exists")
 	}
 	s.Logger.Debug("Link successfully saved to db")
 
