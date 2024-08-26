@@ -22,7 +22,7 @@ func New() *ZapLogger {
 		return nil
 	}
 
-	filename := time.Now().Format("2006-01-02_15-04-05") + ".log"
+	filename := time.Now().Format("2006-01-02") + ".log"
 	filePath := filepath.Join(dirName, filename)
 
 	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
