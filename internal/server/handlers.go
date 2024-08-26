@@ -22,6 +22,8 @@ func (s *server) serveLink(ctx echo.Context) error {
 		s.service.Logger.Error("Error GetURLFromRedis()",
 			zap.Error(err),
 		)
+
+		return ctx.HTML(http.StatusInternalServerError, "internal server error")
 	}
 
 	s.service.Logger.Debug("Original URL from Redis",
@@ -33,6 +35,8 @@ func (s *server) serveLink(ctx echo.Context) error {
 		s.service.Logger.Error("Error GetContentFromDatabase()",
 			zap.Error(err),
 		)
+
+		return ctx.HTML(http.StatusNotFound, "content not found in database")
 	}
 
 	return ctx.HTML(http.StatusOK, string(content[:]))
