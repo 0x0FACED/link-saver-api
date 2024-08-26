@@ -37,5 +37,5 @@ type LinkWorker interface {
 	GetContentByTelegramIDOriginalURL(ctx context.Context, userID int64, originalURL string) ([]byte, error)
 	GetLinksByTelegramIDDesc(ctx context.Context, userID int64, desc string) ([]*gen.Link, error)
 	GetLinkByID(ctx context.Context, id int) (*models.Link, error)
-	DeleteLink(ctx context.Context, l *models.Link) error
+	DeleteLink(ctx context.Context, id int) (string, int64, error)
 }
