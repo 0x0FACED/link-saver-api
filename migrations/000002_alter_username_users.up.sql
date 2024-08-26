@@ -5,8 +5,7 @@ ALTER TABLE users
 ALTER COLUMN username SET NOT NULL;
 
 ALTER TABLE users
-DROP COLUMN username
-
+DROP COLUMN username;
 
 ALTER TABLE links
 ADD CONSTRAINT fk_user
