@@ -3,7 +3,7 @@ module github.com/0x0FACED/link-saver-api
 go 1.22.5
 
 require (
-	github.com/0x0FACED/proto-files v0.0.4
+	github.com/0x0FACED/proto-files v0.0.6
 	github.com/gocolly/colly v1.2.0
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/joho/godotenv v1.5.1
