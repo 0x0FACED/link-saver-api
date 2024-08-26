@@ -1,7 +1,7 @@
 package wrap
 
-import "errors"
+import "fmt"
 
-func E(msg string, err error) error {
-	return errors.New(msg + ": " + err.Error())
+func E(pkg string, msg string, err error) error {
+	return fmt.Errorf("%s -> %s: %w", pkg, msg, err)
 }
