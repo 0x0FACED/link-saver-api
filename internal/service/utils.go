@@ -5,16 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
+	"go.uber.org/zap"
 )
 
 func (s *LinkService) GetContentFromDatabase(ctx context.Context, userID int64, originalURL string) ([]byte, error) {
@@ -34,67 +29,13 @@ func hash(userID int64, url string) string {
 func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) error {
 	err := s.db.SaveLink(ctx, link)
 	if err != nil {
-		s.Logger.Error("Error while saving to db: " + err.Error())
-		return err
+		s.Logger.Error("Error while saving to db", zap.Error(err))
+		return wrap.E(pkg, "failed to SaveLink()", err)
 	}
-	//gen := hash(link.UserName, link.OriginalURL)
-	//log.Println("generated link: ", gen)
-	//err = s.redis.SaveLink(ctx, link.UserName, gen)
-	//if err != nil {
-	// TODO: maybe delete from db if cant save to redis
-	//	return err
-	//}
 
 	return nil
 }
 
 func getFullLink(userID int64, generatedURL string) string {
 	return fmt.Sprintf("http://localhost:8000/gen/%d/%s", userID, generatedURL)
-}
-
-func getFileNameFromURL(urlStr string) string {
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		return "unknown"
-	}
-
-	fileName := strings.ReplaceAll(parsedURL.Path, "/", "_")
-	if fileName == "" {
-		fileName = "unknown.html"
-	}
-
-	return fileName
-}
-
-func resolveURL(relURL string, baseURL *url.URL) string {
-	parsedURL, err := url.Parse(relURL)
-	if err != nil {
-		return relURL
-	}
-	return baseURL.ResolveReference(parsedURL).String()
-}
-
-func downloadFile(outputDir, urlStr string) error {
-	resp, err := http.Get(urlStr)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	fileName := getFileNameFromURL(urlStr)
-	filePath := filepath.Join(outputDir, fileName)
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Saved file: %s", filePath)
-	return nil
 }
