@@ -3,10 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"log"
+	"errors"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 	"github.com/0x0FACED/link-saver-api/internal/storage"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
 )
 
 func (p *Postgres) SaveUser(ctx context.Context, tx *sql.Tx, u *models.User) (int, error) {
@@ -19,8 +20,7 @@ func (p *Postgres) SaveUser(ctx context.Context, tx *sql.Tx, u *models.User) (in
 		err = p.db.QueryRowContext(ctx, q, u.UserID).Scan(&id)
 	}
 	if err != nil {
-		log.Println("[DB] error SaveUser():", err)
-		return -1, err
+		return -1, wrap.E(pkg, "failed to SaveUser()", err)
 	}
 
 	return id, nil
@@ -40,8 +40,7 @@ func (p *Postgres) GetTelegramIDByID(ctx context.Context, tx *sql.Tx, id int) (i
 		if err == sql.ErrNoRows {
 			return -1, storage.ErrUserNotFound
 		}
-		log.Println("[DB] error GetUserByUsername():", err)
-		return -1, err
+		return -1, wrap.E(pkg, "failed to GetTelegramIDByID()", err)
 	}
 	return userID, nil
 }
@@ -57,11 +56,10 @@ func (p *Postgres) GetUserByTelegramID(ctx context.Context, tx *sql.Tx, userID i
 	}
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, storage.ErrUserNotFound
 		}
-		log.Println("[DB] error GetUserByUsername():", err)
-		return nil, err
+		return nil, wrap.E(pkg, "failed to GetTelegramIDByID()", err)
 	}
 	return &u, nil
 }
@@ -80,8 +78,7 @@ func (p *Postgres) GetUserIDByTelegramID(ctx context.Context, tx *sql.Tx, userID
 		if err == sql.ErrNoRows {
 			return -1, storage.ErrUserNotFound
 		}
-		log.Println("[DB] error GetUserByUsername():", err)
-		return -1, err
+		return -1, wrap.E(pkg, "failed to GetTelegramIDByID()", err)
 	}
 	return id, nil
 }
