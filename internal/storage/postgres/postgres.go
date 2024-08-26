@@ -5,10 +5,12 @@ import (
 	"fmt"
 
 	"github.com/0x0FACED/link-saver-api/config"
-	"github.com/0x0FACED/link-saver-api/internal/storage"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
 	"github.com/0x0FACED/link-saver-api/migrations"
 	_ "github.com/lib/pq"
 )
+
+var pkg = "storage/postgres"
 
 type Postgres struct {
 	db     *sql.DB
@@ -25,18 +27,18 @@ func (p *Postgres) Connect() error {
 	connStr := p.getConnStr()
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return storage.ErrConnectDB
+		return wrap.E(pkg, "failed to Open()", err)
 	}
 
 	if db.Ping() != nil {
-		return storage.ErrConnectDB
+		return wrap.E(pkg, "failed to Ping()", err)
 	}
 
 	p.db = db
 
 	err = migrations.Up(connStr)
 	if err != nil {
-		return err
+		return wrap.E(pkg, "failed to Up()", err)
 	}
 
 	return nil
