@@ -20,7 +20,7 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	)
 	statusCode := -1
 	var link *models.Link
-	// onHTML -> html page visiting and saving
+	// onHTML -> html page visiting
 	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
 		link = &models.Link{
 			OriginalURL: req.OriginalUrl,
@@ -31,43 +31,55 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 		s.Logger.Debug("Visited link", zap.String("url", link.OriginalURL))
 	})
 
+	// onError -> to handle error in scrap
 	s.colly.OnError(func(r *colly.Response, e error) {
 		statusCode = r.StatusCode
 		s.Logger.Debug("OnError()", zap.Error(e), zap.Int("status_code", r.StatusCode))
 	})
 
-	// start parse html page
+	// start colly
 	err := s.colly.Visit(req.OriginalUrl)
 	s.colly.Wait()
 	if err != nil {
 		s.Logger.Error("Error while scrap HTML",
-			zap.String("err", err.Error()),
+			zap.Error(err),
 			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 			zap.String("url", req.OriginalUrl),
 		)
-		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, err
+		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Invalid link: %v", err)
+	}
+
+	if statusCode == 0 || link == nil {
+		s.Logger.Info("Not Saved", zap.Int64("user", req.UserId))
+		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Link data is missing")
 	}
 
 	s.Logger.Info("Finished", zap.Int64("user", req.UserId))
-	if statusCode == 0 || link == nil {
-		s.Logger.Info("Not Saved", zap.Int64("user", req.UserId))
-		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, err
-	}
 
 	// save page as bytea to database
 	err = s.saveToDatabase(context.TODO(), link)
 	if err != nil {
-		s.Logger.Error("Failed to save to db: " + err.Error())
-		return &gen.SaveLinkResponse{Success: true, Message: "Not saved, already exists"}, err
+		s.Logger.Error("Failed to save to db", zap.Error(err))
+		return &gen.SaveLinkResponse{Success: true, Message: "Not saved, already exists"}, status.Error(codes.AlreadyExists, "link already exists")
 	}
 	s.Logger.Debug("Link successfully saved to db")
+
 	return &gen.SaveLinkResponse{Success: true, Message: "Succeefully saved"}, nil
 }
 
 func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest) (*gen.DeleteLinkResponse, error) {
-	// TODO: impl
-	return &gen.DeleteLinkResponse{Success: true}, nil
+	original, id, err := s.db.DeleteLink(ctx, int(req.LinkId))
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "Link not found: %v", err)
+	}
+
+	err = s.redis.DeleteLink(ctx, id, original)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to delete link from Redis: %v", err)
+	}
+
+	return &gen.DeleteLinkResponse{Success: true, Message: "Successfully deleted"}, nil
 }
 
 func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*gen.GetLinksResponse, error) {
@@ -82,9 +94,10 @@ func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*
 			zap.Int64("user", req.UserId),
 			zap.String("desc", req.Description),
 		)
-		return &gen.GetLinksResponse{Links: nil}, err
+		return &gen.GetLinksResponse{Links: nil}, status.Errorf(codes.Internal, "Failed to get links: %v", err)
 	}
 	s.Logger.Debug("Found links", zap.Int64("user", req.UserId), zap.Any("links", links))
+
 	return &gen.GetLinksResponse{Links: links}, nil
 }
 
@@ -102,7 +115,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 			zap.String("desc", req.Description),
 			zap.Error(err),
 		)
-		return nil, err
+		return nil, status.Errorf(codes.NotFound, "Link not found: %v", err)
 	}
 
 	redisLink, err := s.redis.GetLink(ctx, req.UserId, l.OriginalURL)
@@ -112,7 +125,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 			zap.String("desc", req.Description),
 			zap.Error(err),
 		)
-		return nil, err
+		//return nil, status.Errorf(codes.Internal, "Failed to get link from Redis: %v", err)
 	}
 
 	if redisLink != nil {
@@ -138,7 +151,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 			zap.Int32("url_id", req.UrlId),
 			zap.Error(err),
 		)
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "Failed to save link to cache: %v", err)
 	}
 
 	s.Logger.Debug("Saved to redis",
@@ -161,7 +174,7 @@ func (s *LinkService) GetAllLinks(ctx context.Context, req *gen.GetAllLinksReque
 		zap.Int64("user", req.UserId),
 	)
 
-	links, err := s.db.GetLinksByTelegramIDDesc(ctx, req.UserId, "")
+	links, err := s.db.GetUserLinks(ctx, req.UserId)
 	if err != nil {
 		s.Logger.Error("Failed to get all links from DB",
 			zap.Int64("user", req.UserId),
