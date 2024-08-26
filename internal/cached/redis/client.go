@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/0x0FACED/link-saver-api/config"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
 	"github.com/redis/go-redis/v9"
 )
+
+var pkg = "cached/redis"
 
 type Redis struct {
 	client *redis.Client
 }
+
 type RedisLink struct {
 	ID   string
 	Link string
@@ -35,14 +39,14 @@ func (r *Redis) SaveLink(ctx context.Context, userId int64, url, originalURL str
 
 	err := r.client.SetEx(ctx, key, value, 24*time.Hour).Err()
 	if err != nil {
-		return err
+		return wrap.E(pkg, "failed to SetEx() key:val", err)
 	}
 
 	globalKey := fmt.Sprintf("links:%d:urls", userId)
 
 	_, err = r.client.SAdd(ctx, globalKey, originalURL).Result()
 	if err != nil {
-		return err
+		return wrap.E(pkg, "failed to SAdd() globalKey:url", err)
 	}
 
 	return nil
@@ -54,9 +58,9 @@ func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink 
 	urls, err := r.client.SMembers(ctx, globalKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return "", nil
+			return "", wrap.E(pkg, "no links in redis", err)
 		}
-		return "", err
+		return "", wrap.E(pkg, "failed to SMembers() globalkey:urls", err)
 	}
 
 	for _, originalURL := range urls {
@@ -67,7 +71,7 @@ func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink 
 			if err == redis.Nil {
 				continue
 			}
-			return "", err
+			return "", wrap.E(pkg, "failed to Get() key:url", err)
 		}
 
 		parts := strings.SplitN(value, ":", 2)
@@ -76,7 +80,7 @@ func (r *Redis) GetOriginalURL(ctx context.Context, userId int64, generatedLink 
 		}
 	}
 
-	return "", nil
+	return "", wrap.E(pkg, "no links in redis", nil)
 }
 
 func (r *Redis) GetLink(ctx context.Context, userId int64, originalURL string) (*RedisLink, error) {
@@ -85,14 +89,14 @@ func (r *Redis) GetLink(ctx context.Context, userId int64, originalURL string) (
 	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, err
+			return nil, wrap.E(pkg, "no link found by key", err)
 		}
-		return nil, err
+		return nil, wrap.E(pkg, "internal error in Get()", err)
 	}
 
 	parts := strings.SplitN(value, ":", 2)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid value format in Redis")
+		return nil, wrap.E(pkg, "invalid value format stores", err)
 	}
 
 	return &RedisLink{
@@ -101,55 +105,18 @@ func (r *Redis) GetLink(ctx context.Context, userId int64, originalURL string) (
 	}, nil
 }
 
-func (r *Redis) GetLinks(ctx context.Context, userId int64) ([]*RedisLink, error) {
-	globalKey := fmt.Sprintf("links:%d:urls", userId)
-
-	originalURLs, err := r.client.SMembers(ctx, globalKey).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, err
-		}
-		return nil, err
-	}
-
-	links := make([]*RedisLink, 0, len(originalURLs))
-
-	for _, originalURL := range originalURLs {
-		key := fmt.Sprintf("links:%d:%s", userId, originalURL)
-		value, err := r.client.Get(ctx, key).Result()
-		if err != nil {
-			if err == redis.Nil {
-				continue
-			}
-			return nil, err
-		}
-
-		parts := strings.SplitN(value, ":", 2)
-		if len(parts) < 2 {
-			continue
-		}
-
-		links = append(links, &RedisLink{
-			ID:   parts[0],
-			Link: parts[1],
-		})
-	}
-
-	return links, nil
-}
-
 func (r *Redis) DeleteLink(ctx context.Context, userId int64, originalURL string) error {
 	key := fmt.Sprintf("links:%d:%s", userId, originalURL)
 
 	err := r.client.Del(ctx, key).Err()
 	if err != nil {
-		return err
+		return wrap.E(pkg, "failed to Del() key", err)
 	}
 
 	globalKey := fmt.Sprintf("links:%d:urls", userId)
 	_, err = r.client.SRem(ctx, globalKey, originalURL).Result()
 	if err != nil {
-		return err
+		return wrap.E(pkg, "failed to SRem() globalKey:url", err)
 	}
 
 	return nil
