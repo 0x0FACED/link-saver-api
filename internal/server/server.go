@@ -17,6 +17,7 @@ type server struct {
 	config  config.ServerConfig
 	service *service.LinkService
 	echo    *echo.Echo
+	logger  *logger.ZapLogger
 }
 
 func New(cfg *config.Config, logger *logger.ZapLogger) *server {
@@ -27,6 +28,7 @@ func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 		config:  cfg.Server,
 		echo:    echo.New(),
 		service: s,
+		logger:  logger,
 	}
 }
 

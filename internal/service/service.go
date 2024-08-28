@@ -18,7 +18,7 @@ type LinkService struct {
 
 	db     storage.Database
 	redis  *redis.Redis
-	Logger *logger.ZapLogger
+	logger *logger.ZapLogger
 	colly  *colly.Collector
 }
 
@@ -57,7 +57,7 @@ func New(cfg config.DatabaseConfig, redis *redis.Redis, logger *logger.ZapLogger
 	return &LinkService{
 		db:     db,
 		redis:  redis,
-		Logger: logger,
+		logger: logger,
 		colly:  c,
 	}
 }

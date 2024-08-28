@@ -29,7 +29,7 @@ func hash(userID int64, url string) string {
 func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) error {
 	err := s.db.SaveLink(ctx, link)
 	if err != nil {
-		s.Logger.Error("Error while saving to db", zap.Error(err))
+		s.logger.Error("Error while saving to db", zap.Error(err))
 		return wrap.E(pkg, "failed to SaveLink()", err)
 	}
 
