@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: /path/to/bot
+      dockerfile: Dockerfile
+    container_name: telegram-bot
+    env_file:
+      - /path/to/bot/.env
+    depends_on:
+      - server
+      - redis
+      - postgres
+    networks:
+      - app-network
+
+  server:
+    build:
+      context: /path/to/server
+      dockerfile: Dockerfile
+    container_name: server
+    ports:
+      - "8000:8000"
+    env_file:
+      - /path/to/server/.env
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - app-network
+
+  redis:
+    image: "redis:latest"
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  postgres:
+    image: "postgres:13"
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
