@@ -16,5 +16,7 @@ WORKDIR /root/
 
 COPY --from=builder /app/server .
 COPY --from=builder /app/.env .
+COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/static ./static
 
 CMD ["./server"]
