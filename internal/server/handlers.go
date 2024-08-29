@@ -17,6 +17,7 @@ func (s *server) serveLink(ctx echo.Context) error {
 		zap.String("user", u),
 		zap.String("gen_url", url),
 	)
+
 	original, err := s.service.GetURLFromRedis(context.TODO(), userID, url)
 	if err != nil {
 		s.logger.Error("Error GetURLFromRedis()",
@@ -40,4 +41,8 @@ func (s *server) serveLink(ctx echo.Context) error {
 	}
 
 	return ctx.HTML(http.StatusOK, string(content[:]))
+}
+
+func (s *server) mainHandler(ctx echo.Context) error {
+	return ctx.File("/root/static/index.html")
 }
