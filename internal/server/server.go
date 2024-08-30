@@ -2,7 +2,6 @@ package server
 
 import (
 	"net"
-	"net/http"
 
 	"github.com/0x0FACED/link-saver-api/config"
 	"github.com/0x0FACED/link-saver-api/internal/cached/redis"
@@ -73,17 +72,4 @@ func (s *server) configureRouter() {
 	// handler to return html page to user
 	s.echo.GET("/gen/:user_id/:url", s.serveLink)
 	s.echo.GET("/", s.mainHandler)
-
-	// redirect any undefined routes to the main page
-	s.echo.HTTPErrorHandler = func(err error, ctx echo.Context) {
-		code := http.StatusNotFound
-		if he, ok := err.(*echo.HTTPError); ok {
-			code = he.Code
-		}
-		if code == http.StatusNotFound {
-			ctx.Redirect(302, "/")
-		} else {
-			ctx.JSON(code, echo.Map{"error": err.Error()})
-		}
-	}
 }
