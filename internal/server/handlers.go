@@ -24,7 +24,7 @@ func (s *server) serveLink(ctx echo.Context) error {
 			zap.Error(err),
 		)
 
-		return ctx.HTML(http.StatusInternalServerError, "internal server error")
+		return ctx.Redirect(302, "/")
 	}
 
 	s.logger.Debug("Original URL from Redis",
