@@ -36,6 +36,6 @@ func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) err
 	return nil
 }
 
-func getFullLink(userID int64, generatedURL string) string {
-	return fmt.Sprintf("http://localhost:8000/gen/%d/%s", userID, generatedURL)
+func getFullLink(baseURL string, userID int64, generatedURL string) string {
+	return fmt.Sprintf("%s/gen/%d/%s", baseURL, userID, generatedURL)
 }

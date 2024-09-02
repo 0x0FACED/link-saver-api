@@ -134,7 +134,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 			zap.String("desc", req.Description),
 		)
 
-		fullURL := getFullLink(l.UserID, redisLink.Link)
+		fullURL := getFullLink(s.cfg.BaseURL, l.UserID, redisLink.Link)
 		s.logger.Debug("Generated Full Link",
 			zap.String("full_link", fullURL),
 		)
@@ -160,7 +160,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 		zap.String("gen_url", generatedLink),
 	)
 
-	fullURL := getFullLink(l.UserID, generatedLink)
+	fullURL := getFullLink(s.cfg.BaseURL, l.UserID, generatedLink)
 
 	s.logger.Debug("Generated Full Link",
 		zap.String("full_link", fullURL),
