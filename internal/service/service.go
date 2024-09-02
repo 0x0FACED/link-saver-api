@@ -20,25 +20,26 @@ type LinkService struct {
 	redis  *redis.Redis
 	logger *logger.ZapLogger
 	colly  *colly.Collector
+	cfg    config.GRPCConfig
 }
 
-func New(cfg config.DatabaseConfig, redis *redis.Redis, logger *logger.ZapLogger) *LinkService {
+func New(cfg config.Config, redis *redis.Redis, logger *logger.ZapLogger) *LinkService {
 	logger.Debug("Database config: ",
-		zap.String("db_name", cfg.Name),
-		zap.String("db_host", cfg.Host),
-		zap.String("db_port", cfg.Port),
-		zap.String("db_username", cfg.Username),
-		zap.String("db_password", cfg.Password),
-		zap.String("db_driver", cfg.Driver),
+		zap.String("db_name", cfg.Database.Name),
+		zap.String("db_host", cfg.Database.Host),
+		zap.String("db_port", cfg.Database.Port),
+		zap.String("db_username", cfg.Database.Username),
+		zap.String("db_password", cfg.Database.Password),
+		zap.String("db_driver", cfg.Database.Driver),
 	)
 
 	// TODO: add more drivers
 	var db storage.Database
-	switch cfg.Driver {
+	switch cfg.Database.Driver {
 	case "postgres":
-		db = postgres.New(cfg)
+		db = postgres.New(cfg.Database)
 	default:
-		db = postgres.New(cfg)
+		db = postgres.New(cfg.Database)
 	}
 
 	if db.Connect() == storage.ErrConnectDB {
