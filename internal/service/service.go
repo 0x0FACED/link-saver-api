@@ -60,5 +60,6 @@ func New(cfg config.Config, redis *redis.Redis, logger *logger.ZapLogger) *LinkS
 		redis:  redis,
 		logger: logger,
 		colly:  c,
+		cfg:    cfg.GRPC,
 	}
 }
