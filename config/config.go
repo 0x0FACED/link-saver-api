@@ -24,8 +24,9 @@ type RedisConfig struct {
 }
 
 type GRPCConfig struct {
-	Host string
-	Port string
+	BaseURL string
+	Host    string
+	Port    string
 }
 
 type DatabaseConfig struct {
@@ -61,8 +62,9 @@ func Load() (*Config, error) {
 			Port: os.Getenv("R_PORT"),
 		},
 		GRPC: GRPCConfig{
-			Host: os.Getenv("GRPC_HOST"),
-			Port: os.Getenv("GRPC_PORT"),
+			BaseURL: os.Getenv("BASE_URL"),
+			Host:    os.Getenv("GRPC_HOST"),
+			Port:    os.Getenv("GRPC_PORT"),
 		},
 	}, nil
 }
