@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
 	"github.com/0x0FACED/proto-files/link_service/gen"
@@ -20,6 +22,7 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	)
 	statusCode := -1
 	var link *models.Link
+	resources := make(map[string][]byte)
 	// onHTML -> html page visiting
 	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
 		link = &models.Link{
@@ -29,6 +32,61 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			Content:     []byte(e.Response.Body),
 		}
 		s.logger.Debug("Visited link", zap.String("url", link.OriginalURL))
+	})
+
+	// CSS обработчик
+	s.colly.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
+		s.logger.Debug("Visited style", zap.String("text", e.Text))
+		cssPath := e.Attr("href")
+		if strings.HasPrefix(cssPath, "/") {
+			cssURL := e.Request.AbsoluteURL(cssPath)
+			relPath := getRelativePath(cssURL)
+			s.logger.Debug("Relative Path", zap.String("path", relPath))
+			cssContent := s.fetchResourceContent(cssURL, e)
+			if cssContent != nil {
+				resourceID := s.saveResource(cssContent, relPath)
+				resources[resourceID] = cssContent
+				newPath := fmt.Sprintf("/resources/%s", resourceID)
+				e.DOM.SetAttr("href", newPath)
+			}
+		}
+	})
+
+	// JS обработчик
+	s.colly.OnHTML("script[src]", func(e *colly.HTMLElement) {
+		s.logger.Debug("Visited script", zap.String("text", e.Text))
+		jsPath := e.Attr("src")
+		if strings.HasPrefix(jsPath, "/") {
+			jsURL := e.Request.AbsoluteURL(jsPath)
+			relPath := getRelativePath(jsURL)
+			s.logger.Debug("Relative Path", zap.String("path", relPath))
+			jsContent := s.fetchResourceContent(jsURL, e)
+			if jsContent != nil {
+				resourceID := s.saveResource(jsContent, relPath)
+				resources[resourceID] = jsContent
+				newPath := fmt.Sprintf("/resources/%s", resourceID)
+				e.DOM.SetAttr("src", newPath)
+			}
+		}
+	})
+
+	// Обработчик изображений
+	s.colly.OnHTML("img[src]", func(e *colly.HTMLElement) {
+		s.logger.Debug("Visited image", zap.String("text", e.Text))
+		imgPath := e.Attr("src")
+
+		if strings.HasPrefix(imgPath, "/") {
+			imgURL := e.Request.AbsoluteURL(imgPath)
+			relPath := getRelativePath(imgURL)
+			s.logger.Debug("Relative Path", zap.String("path", relPath))
+			imgContent := s.fetchResourceContent(imgURL, e)
+			if imgContent != nil {
+				resourceID := s.saveResource(imgContent, relPath)
+				resources[resourceID] = imgContent
+				newPath := fmt.Sprintf("/resources/%s", resourceID)
+				e.DOM.SetAttr("src", newPath)
+			}
+		}
 	})
 
 	// onError -> to handle error in scrap
