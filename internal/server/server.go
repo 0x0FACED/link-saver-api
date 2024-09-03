@@ -22,7 +22,7 @@ type server struct {
 
 func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 	r := redis.New(cfg.Redis)
-	s := service.New(*cfg, r, logger)
+	s := service.New(cfg, r, logger)
 	logger.Debug("Redis and service entities are created")
 	return &server{
 		config:  cfg.Server,
