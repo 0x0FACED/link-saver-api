@@ -3,7 +3,7 @@ package models
 type ResourceType int
 
 const (
-	ScriptType = iota
+	ScriptType = iota + 1
 	CSSType
 	ImageType
 )
