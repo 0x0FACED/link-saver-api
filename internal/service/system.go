@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
@@ -15,78 +15,133 @@ import (
 )
 
 func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*gen.SaveLinkResponse, error) {
-	s.logger.Debug("Received link",
+	s.logger.Info("Received link",
 		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 		zap.String("url", req.OriginalUrl),
 	)
 	statusCode := -1
 	var link *models.Link
-	resources := make(map[string][]byte)
-	// onHTML -> html page visiting
-	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
-		link = &models.Link{
-			OriginalURL: req.OriginalUrl,
-			UserID:      req.UserId,
-			Description: req.Description,
-			Content:     []byte(e.Response.Body),
-		}
-		s.logger.Debug("Visited link", zap.String("url", link.OriginalURL))
-	})
 
-	// CSS обработчик
-	s.colly.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
-		s.logger.Debug("Visited style", zap.String("text", e.Text))
-		cssPath := e.Attr("href")
-		if strings.HasPrefix(cssPath, "/") {
-			cssURL := e.Request.AbsoluteURL(cssPath)
-			relPath := getRelativePath(cssURL)
-			s.logger.Debug("Relative Path", zap.String("path", relPath))
-			cssContent := s.fetchResourceContent(cssURL, e)
-			if cssContent != nil {
-				resourceID := s.saveResource(cssContent, relPath)
-				resources[resourceID] = cssContent
-				newPath := fmt.Sprintf("/resources/%s", resourceID)
-				e.DOM.SetAttr("href", newPath)
+	// JS обработчик
+	s.colly.OnHTML("script[src]", func(e *colly.HTMLElement) {
+		s.logger.Info("Visited script", zap.String("text", e.Attr("src")))
+		jsPath := e.Attr("src")
+		var jsURL string
+
+		if strings.HasPrefix(jsPath, "/") {
+			jsURL = e.Request.AbsoluteURL(jsPath)
+		} else {
+			jsURL = e.Request.URL.JoinPath(jsPath).String() // Преобразование URL в строку
+		}
+
+		relPath := getRelativePath(jsURL)
+		s.logger.Debug("Relative Path", zap.String("path", relPath))
+
+		jsContent := s.fetchResourceContent(jsURL, e)
+		if jsContent != nil {
+			res := &models.Resource{
+				Name:    hashResName(relPath, models.ScriptType),
+				Content: jsContent,
+				Type:    models.ScriptType,
+			}
+			err := s.saveResource(res)
+			if err != nil {
+				s.logger.Debug("Failed to save script", zap.Any("script", res.Name))
+			}
+			newPath := getResourceURL(s.cfg.BaseURL, "script", res.Name)
+			e.DOM.SetAttr("src", newPath)
+			attr, ex := e.DOM.Attr("src")
+			if ex {
+				s.logger.Info("Attr", zap.String("attr", attr))
 			}
 		}
 	})
 
-	// JS обработчик
-	s.colly.OnHTML("script[src]", func(e *colly.HTMLElement) {
-		s.logger.Debug("Visited script", zap.String("text", e.Text))
-		jsPath := e.Attr("src")
-		if strings.HasPrefix(jsPath, "/") {
-			jsURL := e.Request.AbsoluteURL(jsPath)
-			relPath := getRelativePath(jsURL)
-			s.logger.Debug("Relative Path", zap.String("path", relPath))
-			jsContent := s.fetchResourceContent(jsURL, e)
-			if jsContent != nil {
-				resourceID := s.saveResource(jsContent, relPath)
-				resources[resourceID] = jsContent
-				newPath := fmt.Sprintf("/resources/%s", resourceID)
-				e.DOM.SetAttr("src", newPath)
+	// CSS обработчик
+	s.colly.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
+		s.logger.Info("Visited style", zap.String("text", e.Attr("href")))
+		cssPath := e.Attr("href")
+		var cssURL string
+
+		if strings.HasPrefix(cssPath, "/") {
+			cssURL = e.Request.AbsoluteURL(cssPath)
+		} else {
+			cssURL = e.Request.URL.JoinPath(cssPath).String() // Преобразование URL в строку
+		}
+
+		relPath := getRelativePath(cssURL)
+		s.logger.Debug("Relative Path", zap.String("path", relPath))
+
+		cssContent := s.fetchResourceContent(cssURL, e)
+		if cssContent != nil {
+			res := &models.Resource{
+				Name:    hashResName(relPath, models.CSSType),
+				Content: cssContent,
+				Type:    models.CSSType,
+			}
+			err := s.saveResource(res)
+			if err != nil {
+				s.logger.Debug("Failed to save CSS", zap.Any("css", res.Name))
+			}
+			newPath := getResourceURL(s.cfg.BaseURL, "css", res.Name)
+			e.DOM.SetAttr("href", newPath)
+			attr, ex := e.DOM.Attr("href")
+			if ex {
+				s.logger.Info("Attr", zap.String("attr", attr))
 			}
 		}
 	})
 
 	// Обработчик изображений
 	s.colly.OnHTML("img[src]", func(e *colly.HTMLElement) {
-		s.logger.Debug("Visited image", zap.String("text", e.Text))
+		s.logger.Info("Visited image", zap.String("text", e.Attr("src")))
 		imgPath := e.Attr("src")
 
+		var imgURL string
 		if strings.HasPrefix(imgPath, "/") {
-			imgURL := e.Request.AbsoluteURL(imgPath)
-			relPath := getRelativePath(imgURL)
-			s.logger.Debug("Relative Path", zap.String("path", relPath))
-			imgContent := s.fetchResourceContent(imgURL, e)
-			if imgContent != nil {
-				resourceID := s.saveResource(imgContent, relPath)
-				resources[resourceID] = imgContent
-				newPath := fmt.Sprintf("/resources/%s", resourceID)
-				e.DOM.SetAttr("src", newPath)
+			imgURL = e.Request.AbsoluteURL(imgPath)
+		} else {
+			imgURL = e.Request.URL.JoinPath(imgPath).String()
+		}
+
+		relPath := getRelativePath(imgURL)
+		s.logger.Debug("Relative Path", zap.String("path", relPath))
+
+		imgContent := s.fetchResourceContent(imgURL, e)
+		if imgContent != nil {
+			res := &models.Resource{
+				Name:    hashResName(relPath, models.ImageType),
+				Content: imgContent,
+				Type:    models.ImageType,
+			}
+			err := s.saveResource(res)
+			if err != nil {
+				s.logger.Debug("Failed to save image", zap.Any("image", res.Name))
+			}
+			newPath := getResourceURL(s.cfg.BaseURL, "image", res.Name)
+			e.DOM.SetAttr("src", newPath)
+			attr, ex := e.DOM.Attr("src")
+			if ex {
+				s.logger.Info("Attr", zap.String("attr", attr))
 			}
 		}
+	})
+
+	// Обработчик для HTML
+	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
+		// Присваиваем HTML-страницу только после обработки всех ресурсов
+		updatedHTML, err := e.DOM.Html()
+		if err != nil {
+			s.logger.Error("Error DOM.Html()", zap.Error(err))
+		}
+		link = &models.Link{
+			OriginalURL: req.OriginalUrl,
+			UserID:      req.UserId,
+			Description: req.Description,
+			Content:     []byte(updatedHTML),
+		}
+		s.logger.Info("Visited link", zap.String("url", link.OriginalURL))
 	})
 
 	// onError -> to handle error in scrap
@@ -107,9 +162,13 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 		)
 		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Invalid link: %v", err)
 	}
+	if statusCode == http.StatusForbidden {
+		s.logger.Debug("Not Saved", zap.Int64("user", req.UserId))
+		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "You dont have permissions")
+	}
 
-	if statusCode == 0 || link == nil {
-		s.logger.Info("Not Saved", zap.Int64("user", req.UserId))
+	if link == nil {
+		s.logger.Debug("Not Saved", zap.Int64("user", req.UserId))
 		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Link data is missing")
 	}
 
@@ -123,10 +182,13 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 	}
 	s.logger.Debug("Link successfully saved to db")
 
-	return &gen.SaveLinkResponse{Success: true, Message: "Succeefully saved"}, nil
+	return &gen.SaveLinkResponse{Success: true, Message: "Successfully saved"}, nil
 }
 
 func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest) (*gen.DeleteLinkResponse, error) {
+	s.logger.Info("New req GetAllLinks()",
+		zap.Int64("link_id", int64(req.LinkId)),
+	)
 	original, id, err := s.db.DeleteLink(ctx, int(req.LinkId))
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "Link not found: %v", err)
@@ -141,7 +203,7 @@ func (s *LinkService) DeleteLink(ctx context.Context, req *gen.DeleteLinkRequest
 }
 
 func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*gen.GetLinksResponse, error) {
-	s.logger.Debug("New req GetLinks()",
+	s.logger.Info("New req GetLinks()",
 		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 	)
@@ -160,7 +222,7 @@ func (s *LinkService) GetLinks(ctx context.Context, req *gen.GetLinksRequest) (*
 }
 
 func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*gen.GetLinkResponse, error) {
-	s.logger.Debug("New req GetLink()",
+	s.logger.Info("New req GetLink()",
 		zap.Int64("user", req.UserId),
 		zap.String("desc", req.Description),
 		zap.Int32("url_id", req.UrlId),
@@ -228,7 +290,7 @@ func (s *LinkService) GetLink(ctx context.Context, req *gen.GetLinkRequest) (*ge
 }
 
 func (s *LinkService) GetAllLinks(ctx context.Context, req *gen.GetAllLinksRequest) (*gen.GetAllLinksResponse, error) {
-	s.logger.Debug("New req GetAllLinks()",
+	s.logger.Info("New req GetAllLinks()",
 		zap.Int64("user", req.UserId),
 	)
 
