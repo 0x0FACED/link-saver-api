@@ -22,6 +22,7 @@ type Database interface {
 
 	LinkWorker
 	UserWorker
+	ResourceWorker
 }
 
 type UserWorker interface {
@@ -38,4 +39,9 @@ type LinkWorker interface {
 	GetLinksByTelegramIDDesc(ctx context.Context, userID int64, desc string) ([]*gen.Link, error)
 	GetLinkByID(ctx context.Context, id int) (*models.Link, error)
 	DeleteLink(ctx context.Context, id int) (string, int64, error)
+}
+
+type ResourceWorker interface {
+	SaveResource(ctx context.Context, res *models.Resource) error
+	GetResourceContentByNameType(ctx context.Context, name string, resType models.ResourceType) ([]byte, error)
 }
