@@ -5,8 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,6 +22,10 @@ func (s *LinkService) GetContentFromDatabase(ctx context.Context, userID int64, 
 	return s.db.GetContentByTelegramIDOriginalURL(ctx, userID, originalURL)
 }
 
+func (s *LinkService) GetResourceContentByNameType(ctx context.Context, name string, resType models.ResourceType) ([]byte, error) {
+	return s.db.GetResourceContentByNameType(ctx, name, resType)
+}
+
 func (s *LinkService) GetURLFromRedis(ctx context.Context, userID int64, generatedURL string) (string, error) {
 	return s.redis.GetOriginalURL(ctx, userID, generatedURL)
 }
@@ -29,6 +34,40 @@ func hash(userID int64, url string) string {
 	data := fmt.Sprintf("%d:%s:%d", userID, url, time.Now().UnixNano())
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
+}
+
+func hashResName(name string, resType models.ResourceType) string {
+	data := fmt.Sprintf("%s:%d", name, resType)
+	hash := sha256.Sum256([]byte(data))
+	hashString := hex.EncodeToString(hash[:])
+
+	var extension string
+	switch resType {
+	case models.ScriptType:
+		extension = "js"
+	case models.CSSType:
+		extension = "css"
+	case models.ImageType:
+		extension = getImageExtension(name)
+	default:
+		extension = "png"
+	}
+
+	return fmt.Sprintf("%s.%s", hashString, extension)
+}
+
+func getImageExtension(name string) string {
+	ext := filepath.Ext(name)
+	switch ext {
+	case ".png":
+		return "png"
+	case ".jpg", ".jpeg":
+		return "jpeg"
+	case ".gif":
+		return "gif"
+	default:
+		return "png"
+	}
 }
 
 func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) error {
@@ -44,39 +83,35 @@ func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) err
 func getFullLink(baseURL string, userID int64, generatedURL string) string {
 	return fmt.Sprintf("%s/gen/%d/%s", baseURL, userID, generatedURL)
 }
-func (s *LinkService) saveResource(content []byte, resourcePath string) string {
-	safeFileName := strings.ReplaceAll(resourcePath, "/", "_")
 
-	resourceDir := "./resources"
-
-	err := os.MkdirAll(resourceDir, os.ModePerm)
+func getResourceURL(baseURL string, resType string, name string) string {
+	// http://localhost:8000/assets/css/some_style.css
+	return fmt.Sprintf("%s/assets/%s/%s", baseURL, resType, name)
+}
+func (s *LinkService) saveResource(res *models.Resource) error {
+	err := s.db.SaveResource(context.TODO(), res)
 	if err != nil {
-		s.logger.Error("Failed to create resource directory", zap.Error(err))
-		return ""
+		s.logger.Error("Failed to save resource", zap.Error(err))
+		return err
 	}
 
-	filePath := filepath.Join(resourceDir, safeFileName)
-
-	err = os.WriteFile(filePath, content, 0644)
-	if err != nil {
-		s.logger.Error("Failed to write resource to file", zap.Error(err))
-		return ""
-	}
-
-	s.logger.Info("Resource saved", zap.String("file_path", filePath))
-
-	return filePath
+	return nil
 }
 
-// Метод для загрузки ресурса по URL
 func (s *LinkService) fetchResourceContent(url string, e *colly.HTMLElement) []byte {
-	var content []byte
-	err := s.colly.Visit(url)
-	if err == nil {
-		content = e.Response.Body
-	} else {
+	resp, err := http.Get(url)
+	if err != nil {
 		s.logger.Error("Failed to fetch resource", zap.String("url", url), zap.Error(err))
+		return nil
 	}
+	defer resp.Body.Close()
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		s.logger.Error("Failed to read resource content", zap.String("url", url), zap.Error(err))
+		return nil
+	}
+
 	return content
 }
 
@@ -85,6 +120,5 @@ func getRelativePath(u string) string {
 	if err != nil {
 		return ""
 	}
-	// Join path to remove leading slashes if they are present
 	return strings.TrimPrefix(parsedURL.Path, "/")
 }
