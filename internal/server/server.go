@@ -72,4 +72,5 @@ func (s *server) configureRouter() {
 	// handler to return html page to user
 	s.echo.GET("/gen/:user_id/:url", s.serveLink)
 	s.echo.GET("/", s.mainHandler)
+	s.echo.GET("/assets/:type/:name", s.serveResourceHandler)
 }
