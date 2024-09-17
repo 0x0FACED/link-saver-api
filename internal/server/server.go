@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"net"
 
 	"github.com/0x0FACED/link-saver-api/config"
@@ -33,12 +34,12 @@ func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 }
 
 func Start() error {
-	logger := logger.New()
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("Failed to load config: " + err.Error())
+		log.Fatalln("Failed to load config: " + err.Error())
 		return err
 	}
+	logger := logger.New(cfg.Logger)
 
 	logger.Info("Config loaded")
 
@@ -72,5 +73,5 @@ func (s *server) configureRouter() {
 	// handler to return html page to user
 	s.echo.GET("/gen/:user_id/:url", s.serveLink)
 	s.echo.GET("/", s.mainHandler)
-	s.echo.GET("/assets/:type/:name", s.serveResourceHandler)
+	s.echo.GET("/s/assets/:type/:name", s.serveResourceHandler)
 }
