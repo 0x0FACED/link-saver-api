@@ -48,6 +48,7 @@ func (s *server) serveLink(ctx echo.Context) error {
 func (s *server) serveResourceHandler(ctx echo.Context) error {
 	_typeParam := ctx.Param("type")
 	name := ctx.Param("name")
+	s.logger.Debug("Received req RESOURCE", zap.String("type", _typeParam), zap.String("name", name))
 
 	var resType models.ResourceType
 	switch _typeParam {
@@ -83,6 +84,8 @@ func (s *server) serveResourceHandler(ctx echo.Context) error {
 			contentType = "image/jpeg"
 		case "gif":
 			contentType = "image/gif"
+		case "svg":
+			contentType = "image/svg+xml"
 		default:
 			contentType = "application/octet-stream"
 		}
@@ -93,16 +96,10 @@ func (s *server) serveResourceHandler(ctx echo.Context) error {
 
 func getImageExtension(name string) string {
 	ext := filepath.Ext(name)
-	switch ext {
-	case ".png":
-		return "png"
-	case ".jpg", ".jpeg":
-		return "jpeg"
-	case ".gif":
-		return "gif"
-	default:
+	if ext == "" {
 		return "unknown"
 	}
+	return ext[1:]
 }
 
 func (s *server) mainHandler(ctx echo.Context) error {
