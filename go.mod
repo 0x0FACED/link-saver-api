@@ -1,6 +1,6 @@
 module github.com/0x0FACED/link-saver-api
 
-go 1.22.5
+go 1.23.0
 
 require (
 	github.com/0x0FACED/proto-files v0.0.6
@@ -11,7 +11,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/redis/go-redis/v9 v9.6.1
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.65.0
+	google.golang.org/grpc v1.66.2
 )
 
 require (
