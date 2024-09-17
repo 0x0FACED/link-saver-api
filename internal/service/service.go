@@ -23,7 +23,7 @@ type LinkService struct {
 	cfg    config.GRPCConfig
 }
 
-func New(cfg config.Config, redis *redis.Redis, logger *logger.ZapLogger) *LinkService {
+func New(cfg *config.Config, redis *redis.Redis, logger *logger.ZapLogger) *LinkService {
 	logger.Debug("Database config: ",
 		zap.String("db_name", cfg.Database.Name),
 		zap.String("db_host", cfg.Database.Host),

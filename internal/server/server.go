@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"net"
 
 	"github.com/0x0FACED/link-saver-api/config"
@@ -22,7 +23,7 @@ type server struct {
 
 func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 	r := redis.New(cfg.Redis)
-	s := service.New(cfg.Database, r, logger)
+	s := service.New(cfg, r, logger)
 	logger.Debug("Redis and service entities are created")
 	return &server{
 		config:  cfg.Server,
@@ -33,12 +34,12 @@ func New(cfg *config.Config, logger *logger.ZapLogger) *server {
 }
 
 func Start() error {
-	logger := logger.New()
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("Failed to load config: " + err.Error())
+		log.Fatalln("Failed to load config: " + err.Error())
 		return err
 	}
+	logger := logger.New(cfg.Logger)
 
 	logger.Info("Config loaded")
 
