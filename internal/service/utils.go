@@ -58,19 +58,13 @@ func hashResName(name string, resType models.ResourceType) string {
 
 func getImageExtension(name string) string {
 	ext := filepath.Ext(name)
-	switch ext {
-	case ".png":
-		return "png"
-	case ".jpg", ".jpeg":
-		return "jpeg"
-	case ".gif":
-		return "gif"
-	default:
-		return "png"
+	if ext == "" {
+		return "unknown"
 	}
+	return ext[1:]
 }
 
-func (s *LinkService) saveToDatabase(ctx context.Context, link *models.Link) error {
+func (s *LinkService) saveLink(ctx context.Context, link *models.Link) error {
 	err := s.db.SaveLink(ctx, link)
 	if err != nil {
 		s.logger.Error("Error while saving to db", zap.Error(err))
@@ -86,7 +80,7 @@ func getFullLink(baseURL string, userID int64, generatedURL string) string {
 
 func getResourceURL(baseURL string, resType string, name string) string {
 	// http://localhost:8000/assets/css/some_style.css
-	return fmt.Sprintf("%s/assets/%s/%s", baseURL, resType, name)
+	return fmt.Sprintf("%s/s/assets/%s/%s", baseURL, resType, name)
 }
 func (s *LinkService) saveResource(res *models.Resource) error {
 	err := s.db.SaveResource(context.TODO(), res)
