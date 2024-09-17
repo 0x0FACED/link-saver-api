@@ -4,17 +4,22 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/0x0FACED/link-saver-api/config"
+	"github.com/0x0FACED/link-saver-api/internal/wrap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 type ZapLogger struct {
 	log *zap.Logger
+
+	cfg config.LoggerConfig
 }
 
-func New() *ZapLogger {
+func New(cfg config.LoggerConfig) *ZapLogger {
 	dirName := "logs"
 	err := os.MkdirAll(dirName, os.ModePerm)
 	if err != nil {
@@ -48,16 +53,33 @@ func New() *ZapLogger {
 	cEnc := zapcore.NewConsoleEncoder(config)
 	fEnc := zapcore.NewConsoleEncoder(config)
 
+	level, err := level(cfg.Level)
+	if err != nil {
+		level = 0 // default level is Info
+	}
+
 	core := zapcore.NewTee(
-		zapcore.NewCore(cEnc, zapcore.AddSync(os.Stdout), zapcore.DebugLevel),
-		zapcore.NewCore(fEnc, zapcore.AddSync(file), zapcore.DebugLevel),
+		zapcore.NewCore(cEnc, zapcore.AddSync(os.Stdout), zapcore.Level(level)),
+		zapcore.NewCore(fEnc, zapcore.AddSync(file), zapcore.Level(level)),
 	)
 
 	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1), zap.AddStacktrace(zapcore.ErrorLevel))
 
+	logger.Info("Logger successfully created!")
+
 	return &ZapLogger{
 		log: logger,
+		cfg: cfg,
 	}
+}
+
+func level(lvl string) (int8, error) {
+	parsedInt, err := strconv.ParseInt(lvl, 10, 8) // 10 - основание, 8 - разрядность
+	if err != nil {
+		return -2, wrap.E("logger", "wrong level", err)
+	}
+
+	return int8(parsedInt), nil
 }
 
 func customTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
