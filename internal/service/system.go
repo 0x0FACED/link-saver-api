@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"github.com/0x0FACED/link-saver-api/internal/domain/models"
@@ -20,28 +19,22 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 		zap.String("desc", req.Description),
 		zap.String("url", req.OriginalUrl),
 	)
-	statusCode := -1
 	var link *models.Link
 
-	// JS обработчик
-	s.colly.OnHTML("script[src]", func(e *colly.HTMLElement) {
-		s.logger.Info("Visited script", zap.String("text", e.Attr("src")))
-		jsPath := e.Attr("src")
-		var jsURL string
+	page := s.rod.MustPage(req.OriginalUrl)
 
-		if strings.HasPrefix(jsPath, "/") {
-			jsURL = e.Request.AbsoluteURL(jsPath)
-		} else {
-			jsURL = e.Request.URL.JoinPath(jsPath).String() // Преобразование URL в строку
+	s.colly.OnHTML("script[src]", func(e *colly.HTMLElement) {
+		jsPath := e.Attr("src")
+		if strings.HasPrefix(jsPath, "http://") || strings.HasPrefix(jsPath, "https://") {
+			s.logger.Debug("External script link, skipping", zap.String("url", jsPath))
+			return
 		}
 
-		relPath := getRelativePath(jsURL)
-		s.logger.Debug("Relative Path", zap.String("path", relPath))
-
+		jsURL := e.Request.AbsoluteURL(jsPath)
 		jsContent := s.fetchResourceContent(jsURL, e)
 		if jsContent != nil {
 			res := &models.Resource{
-				Name:    hashResName(relPath, models.ScriptType),
+				Name:    hashResName(getRelativePath(jsURL), models.ScriptType),
 				Content: jsContent,
 				Type:    models.ScriptType,
 			}
@@ -51,32 +44,21 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			}
 			newPath := getResourceURL(s.cfg.BaseURL, "script", res.Name)
 			e.DOM.SetAttr("src", newPath)
-			attr, ex := e.DOM.Attr("src")
-			if ex {
-				s.logger.Info("Attr", zap.String("attr", attr))
-			}
 		}
 	})
 
-	// CSS обработчик
 	s.colly.OnHTML("link[rel='stylesheet']", func(e *colly.HTMLElement) {
-		s.logger.Info("Visited style", zap.String("text", e.Attr("href")))
 		cssPath := e.Attr("href")
-		var cssURL string
-
-		if strings.HasPrefix(cssPath, "/") {
-			cssURL = e.Request.AbsoluteURL(cssPath)
-		} else {
-			cssURL = e.Request.URL.JoinPath(cssPath).String() // Преобразование URL в строку
+		if strings.HasPrefix(cssPath, "http://") || strings.HasPrefix(cssPath, "https://") {
+			s.logger.Debug("External stylesheet link, skipping", zap.String("url", cssPath))
+			return
 		}
 
-		relPath := getRelativePath(cssURL)
-		s.logger.Debug("Relative Path", zap.String("path", relPath))
-
+		cssURL := e.Request.AbsoluteURL(cssPath)
 		cssContent := s.fetchResourceContent(cssURL, e)
 		if cssContent != nil {
 			res := &models.Resource{
-				Name:    hashResName(relPath, models.CSSType),
+				Name:    hashResName(getRelativePath(cssURL), models.CSSType),
 				Content: cssContent,
 				Type:    models.CSSType,
 			}
@@ -86,32 +68,21 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			}
 			newPath := getResourceURL(s.cfg.BaseURL, "css", res.Name)
 			e.DOM.SetAttr("href", newPath)
-			attr, ex := e.DOM.Attr("href")
-			if ex {
-				s.logger.Info("Attr", zap.String("attr", attr))
-			}
 		}
 	})
 
-	// Обработчик изображений
 	s.colly.OnHTML("img[src]", func(e *colly.HTMLElement) {
-		s.logger.Info("Visited image", zap.String("text", e.Attr("src")))
 		imgPath := e.Attr("src")
-
-		var imgURL string
-		if strings.HasPrefix(imgPath, "/") {
-			imgURL = e.Request.AbsoluteURL(imgPath)
-		} else {
-			imgURL = e.Request.URL.JoinPath(imgPath).String()
+		if strings.HasPrefix(imgPath, "http://") || strings.HasPrefix(imgPath, "https://") {
+			s.logger.Debug("External image link, skipping", zap.String("url", imgPath))
+			return
 		}
 
-		relPath := getRelativePath(imgURL)
-		s.logger.Debug("Relative Path", zap.String("path", relPath))
-
+		imgURL := e.Request.AbsoluteURL(imgPath)
 		imgContent := s.fetchResourceContent(imgURL, e)
 		if imgContent != nil {
 			res := &models.Resource{
-				Name:    hashResName(relPath, models.ImageType),
+				Name:    hashResName(getRelativePath(imgURL), models.ImageType),
 				Content: imgContent,
 				Type:    models.ImageType,
 			}
@@ -121,61 +92,35 @@ func (s *LinkService) SaveLink(ctx context.Context, req *gen.SaveLinkRequest) (*
 			}
 			newPath := getResourceURL(s.cfg.BaseURL, "image", res.Name)
 			e.DOM.SetAttr("src", newPath)
-			attr, ex := e.DOM.Attr("src")
-			if ex {
-				s.logger.Info("Attr", zap.String("attr", attr))
-			}
 		}
 	})
 
-	// Обработчик для HTML
-	s.colly.OnHTML("html", func(e *colly.HTMLElement) {
-		// Присваиваем HTML-страницу только после обработки всех ресурсов
-		updatedHTML, err := e.DOM.Html()
-		if err != nil {
-			s.logger.Error("Error DOM.Html()", zap.Error(err))
-		}
-		link = &models.Link{
-			OriginalURL: req.OriginalUrl,
-			UserID:      req.UserId,
-			Description: req.Description,
-			Content:     []byte(updatedHTML),
-		}
-		s.logger.Info("Visited link", zap.String("url", link.OriginalURL))
-	})
+	page.MustWaitLoad()
 
-	// onError -> to handle error in scrap
-	s.colly.OnError(func(r *colly.Response, e error) {
-		statusCode = r.StatusCode
-		s.logger.Debug("OnError()", zap.Error(e), zap.Int("status_code", r.StatusCode))
-	})
+	// Test for wiki kangaroos
+	page.MustEval(`
+		fetch('/w/load.php?lang=en&modules=ext.cite.styles%7Cext.uls.interlanguage%7Cext.visualEditor.desktopArticleTarget.noscript%7Cext.wikimediaBadges%7Cext.wikimediamessages.styles%7Cjquery.makeCollapsible.styles%7Cskins.vector.icons%2Cstyles%7Cskins.vector.search.codex.styles%7Cwikibase.client.init&only=styles&skin=vector-2022')
+			.then(response => response.text())
+			.then(text => {
+				document.querySelector('head').insertAdjacentHTML('beforeend', text);
+			});
+	`)
 
-	// start colly
-	err := s.colly.Visit(req.OriginalUrl)
-	s.colly.Wait()
+	updatedHTML, err := page.HTML()
 	if err != nil {
-		s.logger.Error("Error while scrap HTML",
-			zap.Error(err),
-			zap.Int64("user", req.UserId),
-			zap.String("desc", req.Description),
-			zap.String("url", req.OriginalUrl),
-		)
-		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Invalid link: %v", err)
-	}
-	if statusCode == http.StatusForbidden {
-		s.logger.Debug("Not Saved", zap.Int64("user", req.UserId))
-		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "You dont have permissions")
+		s.logger.Error("Error retrieving updated HTML", zap.Error(err))
+		return &gen.SaveLinkResponse{Success: false, Message: "Error processing page"}, err
 	}
 
-	if link == nil {
-		s.logger.Debug("Not Saved", zap.Int64("user", req.UserId))
-		return &gen.SaveLinkResponse{Success: false, Message: "Not Saved, invalid link"}, status.Errorf(codes.InvalidArgument, "Link data is missing")
+	link = &models.Link{
+		OriginalURL: req.OriginalUrl,
+		UserID:      req.UserId,
+		Description: req.Description,
+		Content:     []byte(updatedHTML),
 	}
+	s.logger.Info("Visited link", zap.String("url", link.OriginalURL))
 
-	s.logger.Info("Finished", zap.Int64("user", req.UserId))
-
-	// save page as bytea to database
-	err = s.saveToDatabase(context.TODO(), link)
+	err = s.saveLink(ctx, link)
 	if err != nil {
 		s.logger.Error("Failed to save to db", zap.Error(err))
 		return &gen.SaveLinkResponse{Success: false, Message: "Not saved, already exists"}, status.Error(codes.AlreadyExists, "link already exists")
