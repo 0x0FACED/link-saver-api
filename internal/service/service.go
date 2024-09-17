@@ -7,6 +7,7 @@ import (
 	"github.com/0x0FACED/link-saver-api/internal/storage"
 	"github.com/0x0FACED/link-saver-api/internal/storage/postgres"
 	"github.com/0x0FACED/proto-files/link_service/gen"
+	"github.com/go-rod/rod"
 	"github.com/gocolly/colly"
 	"go.uber.org/zap"
 )
@@ -19,8 +20,11 @@ type LinkService struct {
 	db     storage.Database
 	redis  *redis.Redis
 	logger *logger.ZapLogger
-	colly  *colly.Collector
-	cfg    config.GRPCConfig
+
+	colly *colly.Collector
+	rod   *rod.Browser
+
+	cfg config.GRPCConfig
 }
 
 func New(cfg *config.Config, redis *redis.Redis, logger *logger.ZapLogger) *LinkService {
@@ -32,7 +36,7 @@ func New(cfg *config.Config, redis *redis.Redis, logger *logger.ZapLogger) *Link
 		zap.String("db_password", cfg.Database.Password),
 		zap.String("db_driver", cfg.Database.Driver),
 	)
-
+	browser := rod.New().MustConnect()
 	// TODO: add more drivers
 	var db storage.Database
 	switch cfg.Database.Driver {
@@ -61,5 +65,6 @@ func New(cfg *config.Config, redis *redis.Redis, logger *logger.ZapLogger) *Link
 		logger: logger,
 		colly:  c,
 		cfg:    cfg.GRPC,
+		rod:    browser,
 	}
 }
