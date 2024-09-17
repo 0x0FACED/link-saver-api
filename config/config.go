@@ -11,6 +11,11 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	GRPC     GRPCConfig
+	Logger   LoggerConfig
+}
+
+type LoggerConfig struct {
+	Level string
 }
 
 type ServerConfig struct {
@@ -65,6 +70,9 @@ func Load() (*Config, error) {
 			BaseURL: os.Getenv("BASE_URL"),
 			Host:    os.Getenv("GRPC_HOST"),
 			Port:    os.Getenv("GRPC_PORT"),
+		},
+		Logger: LoggerConfig{
+			Level: os.Getenv("LOGGER_LEVEL"),
 		},
 	}, nil
 }
