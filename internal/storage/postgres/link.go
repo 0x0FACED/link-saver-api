@@ -180,10 +180,27 @@ func (p *Postgres) DeleteLink(ctx context.Context, id int) (string, int64, error
 	var telegramUserID int64
 	var userID int
 
-	q := `DELETE FROM links WHERE id = $1 RETURNING original_url, user_id`
-	err := p.db.QueryRowContext(ctx, q, id).Scan(&originalURL, &userID)
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", -1, wrap.E(pkg, "failed to DeleteLink()", err)
+		return "", -1, wrap.E(pkg, "failed to begin transaction", err)
+	}
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	qResources := `DELETE FROM resources WHERE link_id = $1`
+	_, err = tx.ExecContext(ctx, qResources, id)
+	if err != nil {
+		return "", -1, wrap.E(pkg, "failed to delete associated resources", err)
+	}
+
+	qLink := `DELETE FROM links WHERE id = $1 RETURNING original_url, user_id`
+	err = tx.QueryRowContext(ctx, qLink, id).Scan(&originalURL, &userID)
+	if err != nil {
+		return "", -1, wrap.E(pkg, "failed to delete link", err)
 	}
 
 	telegramUserID, err = p.GetTelegramIDByID(ctx, nil, userID)
@@ -192,6 +209,10 @@ func (p *Postgres) DeleteLink(ctx context.Context, id int) (string, int64, error
 			return "", -1, wrap.E(pkg, "unusual behavior, link deleted, user not exists", err)
 		}
 		return "", -1, wrap.E(pkg, "failed to GetTelegramIDByID()", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return "", -1, wrap.E(pkg, "failed to commit transaction", err)
 	}
 
 	return originalURL, telegramUserID, nil
