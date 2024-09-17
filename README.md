@@ -13,6 +13,10 @@ This is a simple API for saving information from HTML pages to a database.
 7. [Godotenv](https://github.com/joho/godotenv)
 
 
+## TODO
+
+- [ ] Add tests
+
 <h1>
   <p align="center">
 <strong>Work in progress</strong><br/>
